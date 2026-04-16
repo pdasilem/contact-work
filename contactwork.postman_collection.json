@@ -1,0 +1,147 @@
+{
+  "info": {
+    "name": "ContactWork API",
+    "_postman_id": "f07f1ea3-7da9-4879-b3f5-aec6799a76bb",
+    "description": "Postman collection for ContactWork. The API imports contacts, generates personalized PDFs, sends emails, and syncs replies or bounces from Gmail.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8083"
+    },
+    {
+      "key": "contactSelector",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "description": "Basic liveness check.",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/health"
+      }
+    },
+    {
+      "name": "Mail Health",
+      "description": "Verifies SMTP and IMAP connectivity using the configured Gmail credentials.",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/health/mail"
+      }
+    },
+    {
+      "name": "Import Contacts",
+      "description": "Imports contacts from CSV. Existing emails are skipped, so the operation is idempotent.",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": ""
+            }
+          ]
+        },
+        "url": "{{baseUrl}}/api/v1/contacts/import"
+      }
+    },
+    {
+      "name": "List Contacts",
+      "description": "Returns contacts. Optional query parameters: status, email, organization.",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/contacts"
+      }
+    },
+    {
+      "name": "Get Contact By Selector",
+      "description": "Returns one contact by UUID or email selector with full status timestamps and SMTP message id.",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/contacts/{{contactSelector}}"
+      }
+    },
+    {
+      "name": "Update Contact Note",
+      "description": "Stores a free-form operator note on the contact. Selector can be UUID or email.",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"note\": \"Needs manual follow-up\"\n}"
+        },
+        "url": "{{baseUrl}}/api/v1/contacts/{{contactSelector}}/note"
+      }
+    },
+    {
+      "name": "Preview Letter PDF",
+      "description": "Generates a personalized PDF letter for the given UUID or email selector and returns it as binary PDF.",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/letters/{{contactSelector}}/pdf"
+      }
+    },
+    {
+      "name": "Send One Contact",
+      "description": "Sends one message only for the specified UUID or email selector.",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/send/contact/{{contactSelector}}"
+      }
+    },
+    {
+      "name": "Start Batch Send",
+      "description": "Starts asynchronous sending for contacts currently in NEW status only.",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/send/start"
+      }
+    },
+    {
+      "name": "Send Status",
+      "description": "Returns whether the batch sender is running, what statuses are eligible for batch sending, and aggregated counts by status.",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/send/status"
+      }
+    },
+    {
+      "name": "History By Selector",
+      "description": "Returns the stored message history for a contact, addressed by UUID or email.",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/history/{{contactSelector}}"
+      }
+    },
+    {
+      "name": "Inbox Sync",
+      "description": "Reads Gmail IMAP inbox, updates contacts to REPLIED or BOUNCED, and stores inbound messages in history. Matching is strict by reply headers and outbound message id.",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/inbox/sync"
+      }
+    }
+  ]
+}

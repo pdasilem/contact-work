@@ -72,6 +72,8 @@ Mail settings configured in `application.yml`:
 http://localhost:8083
 ```
 
+For a remote deployment, replace `localhost` with the server host or IP address.
+
 ## Contact Statuses
 
 - `NEW`: imported and not sent yet

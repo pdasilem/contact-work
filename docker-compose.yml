@@ -1,0 +1,47 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: contactwork
+      POSTGRES_USER: contactwork
+      POSTGRES_PASSWORD: contactwork
+    ports:
+      - "5436:5432"
+    volumes:
+      - contactwork_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U contactwork -d contactwork"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  onlyoffice:
+    image: onlyoffice/documentserver
+    environment:
+      JWT_ENABLED: "false"
+      ALLOW_PRIVATE_IP_ADDRESS: "true"
+      ALLOW_META_IP_ADDRESS: "true"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost/healthcheck >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      onlyoffice:
+        condition: service_healthy
+    ports:
+      - "8083:8083"
+
+volumes:
+  contactwork_postgres_data:

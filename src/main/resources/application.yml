@@ -1,0 +1,39 @@
+server:
+  port: 8083
+
+spring:
+  application:
+    name: ContactWork
+  datasource:
+    url: jdbc:postgresql://postgres:5432/contactwork
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+app:
+  resources:
+    letter-template: classpath:data/Letter.docx
+    pitch-deck: classpath:data/Pitch_deck_en.pdf
+    working-dir: /tmp/contactwork/generated
+  mail:
+    subject: 'Partnership Opportunity: Preclinical Validation of Patented Nano-cartilage Tech'
+    body: |-
+      Please find attached a consortium proposal for EIC Pathfinder 2026 regarding preclinical validation of our patented Nano-cartilage technology. We are seeking a lead research partner for TRL 4/5 and have included a detailed letter and scientific pitch deck for your review.
+    letter-attachment-filename: Consortium_Proposal.pdf
+    pitch-deck-attachment-filename: Pitch_deck_en.pdf
+    from: ${APP_MAIL_FROM}
+    send-delay-ms: 3000
+    inbox-sync-cron: "0 */30 * * * *"
+    gmail:
+      username: ${GMAIL_USERNAME}
+      app-password: ${GMAIL_APP_PASSWORD}
