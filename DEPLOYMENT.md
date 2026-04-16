@@ -58,11 +58,15 @@ curl http://127.0.0.1:8083/api/v1/health/mail
 
 ## Update Deployment
 
-After updating the project files on the server:
+To update an existing deployment from the Git repository:
 
 ```bash
+cd /opt/contact-work
+git pull
 docker compose up -d --build
 ```
+
+This recreates the application container when the image or configuration changed.
 
 ## Data Persistence
 
