@@ -16,7 +16,9 @@ services:
       retries: 10
 
   onlyoffice:
-    image: onlyoffice/documentserver
+    build:
+      context: .
+      dockerfile: deploy/onlyoffice/Dockerfile
     environment:
       JWT_ENABLED: "false"
       ALLOW_PRIVATE_IP_ADDRESS: "true"

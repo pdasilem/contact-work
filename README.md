@@ -109,6 +109,21 @@ Import behavior:
 curl 'http://localhost:8083/api/v1/contacts'
 curl 'http://localhost:8083/api/v1/contacts?status=NEW'
 curl 'http://localhost:8083/api/v1/contacts?email=user@example.com'
+curl 'http://localhost:8083/api/v1/contacts?organization=research'
+```
+
+Supported filters:
+
+- `status`
+- `email`
+- `organization`
+
+For human-readable terminal output, use table format:
+
+```bash
+curl 'http://localhost:8083/api/v1/contacts?format=table'
+curl 'http://localhost:8083/api/v1/contacts?status=NEW&format=table'
+curl 'http://localhost:8083/api/v1/contacts?organization=research&format=table'
 ```
 
 ### 4. Read one contact by UUID or email
