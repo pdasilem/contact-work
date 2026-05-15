@@ -5,6 +5,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.pdasilem.contactwork.config.AppProperties;
+import com.pdasilem.contactwork.project.Project;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -42,8 +43,11 @@ class TemplateServiceTest {
                 )
         );
 
+        Project project = new Project();
+        project.setLetterTemplate("classpath:data/Letter.docx");
+        project.setPitchDeck("classpath:data/Pitch_deck_en.pdf");
         TemplateService service = new TemplateService(properties, new DefaultResourceLoader(), pdfConversionService);
-        GeneratedLetter generatedLetter = service.generateLetterPdf("Alice Example");
+        GeneratedLetter generatedLetter = service.generateLetterPdf(project, "Alice Example");
 
         try (InputStream inputStream = Files.newInputStream(generatedLetter.docxPath());
              XWPFDocument document = new XWPFDocument(inputStream)) {

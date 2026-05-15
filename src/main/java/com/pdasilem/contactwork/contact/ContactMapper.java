@@ -9,6 +9,7 @@ public class ContactMapper {
     public ContactResponse toResponse(Contact contact) {
         return new ContactResponse(
                 contact.getId(),
+                contact.getProject().getId(),
                 contact.getOrganizationName(),
                 contact.getCountry(),
                 contact.getContactName(),

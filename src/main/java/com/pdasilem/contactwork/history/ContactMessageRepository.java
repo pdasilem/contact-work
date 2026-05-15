@@ -6,6 +6,6 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface ContactMessageRepository extends JpaRepository<ContactMessage, UUID> {
-    List<ContactMessage> findByContactIdOrderByMessageTimestampAsc(UUID contactId);
+    List<ContactMessage> findByProjectIdAndContactIdOrderByMessageTimestampAsc(UUID projectId, UUID contactId);
     Optional<ContactMessage> findByMessageId(String messageId);
 }

@@ -1,6 +1,6 @@
 # ContactWork
 
-ContactWork is a backend-only Spring Boot service for controlled email outreach. It imports contacts from CSV into PostgreSQL, generates a personalized PDF letter from a DOCX template, sends email with two PDF attachments through Gmail, and tracks replies or bounces back into the database.
+ContactWork is a Spring Boot service for controlled, project-scoped email outreach. It imports contacts from CSV into PostgreSQL, generates a personalized PDF letter from a DOCX template, sends email with two PDF attachments through Gmail, and tracks replies or bounces back into the database.
 
 ## Main Features
 
@@ -11,13 +11,15 @@ ContactWork is a backend-only Spring Boot service for controlled email outreach.
 - Reply and bounce synchronization through Gmail IMAP
 - Message history storage for outbound and inbound emails
 - Manual note field on each contact
-- Backend API for Postman or Bruno workflows
+- Project-scoped REST API for Postman or Bruno workflows
+- Vaadin project management UI at `/app`
 
 ## Stack
 
 - Java 25
 - Spring Boot 3.5.13
 - Spring Data JPA
+- Vaadin Flow
 - PostgreSQL 17
 - Flyway
 - Docker Compose
@@ -29,13 +31,13 @@ The service is designed to run through `docker compose`.
 
 Containers:
 
-- `app`: ContactWork API
+- `app`: ContactWork API and Vaadin UI
 - `postgres`: PostgreSQL database
 - `onlyoffice`: internal PDF conversion service
 
 Published host ports:
 
-- `8083`: ContactWork API
+- `8083`: ContactWork API and Vaadin UI
 - `5436`: PostgreSQL
 
 `ONLYOFFICE` is internal-only and is not exposed on the host.
@@ -58,13 +60,24 @@ Required private variables:
 - `GMAIL_APP_PASSWORD`
 - `APP_MAIL_FROM`
 
-Mail settings configured in `application.yml`:
+Initial project defaults still come from `application.yml`, but runtime outreach settings are stored per project:
 
 - `app.mail.subject`
 - `app.mail.body`
 - `app.mail.letter-attachment-filename`
 - `app.mail.pitch-deck-attachment-filename`
 - `app.mail.inbox-sync-cron`
+
+Project-specific settings include:
+
+- Gmail username and app password
+- sender address
+- subject and body
+- letter template
+- pitch deck attachment
+- attachment filenames
+- send delay
+- inbox sync behavior
 
 ## API Base URL
 
@@ -73,6 +86,14 @@ http://localhost:8083
 ```
 
 For a remote deployment, replace `localhost` with the server host or IP address.
+
+## Web Interface
+
+```text
+http://localhost:8083/app
+```
+
+The Vaadin interface manages projects and project mailbox settings. Operational contact, send, inbox, and history APIs require an explicit `{projectId}` path segment.
 
 ## Contact Statuses
 
@@ -89,13 +110,13 @@ For a remote deployment, replace `localhost` with the server host or IP address.
 
 ```bash
 curl http://localhost:8083/api/v1/health
-curl http://localhost:8083/api/v1/health/mail
+curl http://localhost:8083/api/v1/projects/{projectId}/health/mail
 ```
 
 ### 2. Import contacts from CSV
 
 ```bash
-curl -F 'file=@contacts.csv;type=text/csv' http://localhost:8083/api/v1/contacts/import
+curl -F 'file=@contacts.csv;type=text/csv' http://localhost:8083/api/v1/projects/{projectId}/contacts/import
 ```
 
 Import behavior:
@@ -106,10 +127,10 @@ Import behavior:
 ### 3. List contacts
 
 ```bash
-curl 'http://localhost:8083/api/v1/contacts'
-curl 'http://localhost:8083/api/v1/contacts?status=NEW'
-curl 'http://localhost:8083/api/v1/contacts?email=user@example.com'
-curl 'http://localhost:8083/api/v1/contacts?organization=research'
+curl 'http://localhost:8083/api/v1/projects/{projectId}/contacts'
+curl 'http://localhost:8083/api/v1/projects/{projectId}/contacts?status=NEW'
+curl 'http://localhost:8083/api/v1/projects/{projectId}/contacts?email=user@example.com'
+curl 'http://localhost:8083/api/v1/projects/{projectId}/contacts?organization=research'
 ```
 
 Supported filters:
@@ -121,33 +142,33 @@ Supported filters:
 For human-readable terminal output, use table format:
 
 ```bash
-curl 'http://localhost:8083/api/v1/contacts?format=table'
-curl 'http://localhost:8083/api/v1/contacts?status=NEW&format=table'
-curl 'http://localhost:8083/api/v1/contacts?organization=research&format=table'
+curl 'http://localhost:8083/api/v1/projects/{projectId}/contacts?format=table'
+curl 'http://localhost:8083/api/v1/projects/{projectId}/contacts?status=NEW&format=table'
+curl 'http://localhost:8083/api/v1/projects/{projectId}/contacts?organization=research&format=table'
 ```
 
 ### 4. Read one contact by UUID or email
 
 ```bash
-curl http://localhost:8083/api/v1/contacts/{contactId-or-email}
+curl http://localhost:8083/api/v1/projects/{projectId}/contacts/{contactId-or-email}
 ```
 
 ### 5. Generate a PDF preview
 
 ```bash
-curl http://localhost:8083/api/v1/letters/{contactId-or-email}/pdf --output preview.pdf
+curl http://localhost:8083/api/v1/projects/{projectId}/letters/{contactId-or-email}/pdf --output preview.pdf
 ```
 
 ### 6. Send one message
 
 ```bash
-curl -X POST http://localhost:8083/api/v1/send/contact/{contactId-or-email}
+curl -X POST http://localhost:8083/api/v1/projects/{projectId}/send/contact/{contactId-or-email}
 ```
 
 ### 7. Start batch sending
 
 ```bash
-curl -X POST http://localhost:8083/api/v1/send/start
+curl -X POST http://localhost:8083/api/v1/projects/{projectId}/send/start
 ```
 
 Batch behavior:
@@ -158,7 +179,7 @@ Batch behavior:
 ### 8. Check batch status
 
 ```bash
-curl http://localhost:8083/api/v1/send/status
+curl http://localhost:8083/api/v1/projects/{projectId}/send/status
 ```
 
 Returned operational fields include:
@@ -171,7 +192,7 @@ Returned operational fields include:
 ### 9. Sync replies and bounces
 
 ```bash
-curl -X POST http://localhost:8083/api/v1/inbox/sync
+curl -X POST http://localhost:8083/api/v1/projects/{projectId}/inbox/sync
 ```
 
 ### 10. Update a manual contact note
@@ -180,13 +201,13 @@ curl -X POST http://localhost:8083/api/v1/inbox/sync
 curl -X PATCH \
   -H 'Content-Type: application/json' \
   -d '{"note":"Needs manual follow-up next week"}' \
-  http://localhost:8083/api/v1/contacts/{contactId-or-email}/note
+  http://localhost:8083/api/v1/projects/{projectId}/contacts/{contactId-or-email}/note
 ```
 
 ### 11. Read message history
 
 ```bash
-curl http://localhost:8083/api/v1/history/{contactId-or-email}
+curl http://localhost:8083/api/v1/projects/{projectId}/history/{contactId-or-email}
 ```
 
 ## Reply Tracking Rules

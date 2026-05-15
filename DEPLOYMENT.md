@@ -53,7 +53,13 @@ Verify API:
 
 ```bash
 curl http://127.0.0.1:8083/api/v1/health
-curl http://127.0.0.1:8083/api/v1/health/mail
+curl http://127.0.0.1:8083/api/v1/projects/{projectId}/health/mail
+```
+
+Verify UI:
+
+```text
+http://127.0.0.1:8083/app
 ```
 
 ## Update Deployment
@@ -76,7 +82,7 @@ PostgreSQL data is stored in the named volume:
 
 ## Main Runtime Ports
 
-- `8083`: ContactWork API
+- `8083`: ContactWork API and Vaadin UI
 - `5436`: PostgreSQL published from the container
 
 ONLYOFFICE is internal-only and is not published to the host.
@@ -90,11 +96,11 @@ If PDF generation fails:
 
 If mail sending fails:
 
-- verify `GET /api/v1/health/mail`
+- verify `GET /api/v1/projects/{projectId}/health/mail`
 - confirm Gmail app password is valid
 - confirm sender mailbox matches the app password owner
 
 If reply sync does not update statuses:
 
-- run `POST /api/v1/inbox/sync`
+- run `POST /api/v1/projects/{projectId}/inbox/sync`
 - inspect the contact or history endpoints on port `8083`

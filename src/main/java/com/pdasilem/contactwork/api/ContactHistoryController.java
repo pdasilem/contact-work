@@ -4,13 +4,14 @@ import com.pdasilem.contactwork.contact.Contact;
 import com.pdasilem.contactwork.contact.ContactLookupService;
 import com.pdasilem.contactwork.history.ContactMessageService;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/v1/history")
+@RequestMapping("/api/v1")
 public class ContactHistoryController {
 
     private final ContactLookupService contactLookupService;
@@ -27,10 +28,10 @@ public class ContactHistoryController {
         this.contactMessageMapper = contactMessageMapper;
     }
 
-    @GetMapping("/{selector}")
-    public List<ContactMessageResponse> history(@PathVariable String selector) {
-        Contact contact = contactLookupService.findBySelector(selector);
-        return contactMessageService.findByContactId(contact.getId())
+    @GetMapping("/projects/{projectId}/history/{selector}")
+    public List<ContactMessageResponse> projectHistory(@PathVariable UUID projectId, @PathVariable String selector) {
+        Contact contact = contactLookupService.findBySelector(projectId, selector);
+        return contactMessageService.findByProjectIdAndContactId(projectId, contact.getId())
                 .stream()
                 .map(contactMessageMapper::toResponse)
                 .toList();

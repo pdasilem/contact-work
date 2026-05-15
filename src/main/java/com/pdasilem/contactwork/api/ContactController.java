@@ -7,6 +7,7 @@ import com.pdasilem.contactwork.contact.ContactStatus;
 import jakarta.validation.constraints.NotNull;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
@@ -20,7 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @Validated
 @RestController
-@RequestMapping("/api/v1/contacts")
+@RequestMapping("/api/v1")
 public class ContactController {
 
     private final ContactService contactService;
@@ -37,14 +38,15 @@ public class ContactController {
         this.contactMapper = contactMapper;
     }
 
-    @GetMapping(produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.TEXT_PLAIN_VALUE})
-    public ResponseEntity<?> getContacts(
+    @GetMapping(path = "/projects/{projectId}/contacts", produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.TEXT_PLAIN_VALUE})
+    public ResponseEntity<?> getProjectContacts(
+            @PathVariable UUID projectId,
             @RequestParam(required = false) ContactStatus status,
             @RequestParam(required = false) String email,
             @RequestParam(required = false) String organization,
             @RequestParam(required = false, defaultValue = "json") String format
     ) {
-        List<ContactResponse> contacts = contactService.findContacts(status, email, organization)
+        List<ContactResponse> contacts = contactService.findContacts(projectId, status, email, organization)
                 .stream()
                 .map(contactMapper::toResponse)
                 .toList();
@@ -58,14 +60,18 @@ public class ContactController {
         return ResponseEntity.ok(contacts);
     }
 
-    @GetMapping("/{selector}")
-    public ContactResponse getContact(@PathVariable @NotNull String selector) {
-        return contactMapper.toResponse(contactLookupService.findBySelector(selector));
+    @GetMapping("/projects/{projectId}/contacts/{selector}")
+    public ContactResponse getProjectContact(@PathVariable UUID projectId, @PathVariable @NotNull String selector) {
+        return contactMapper.toResponse(contactLookupService.findBySelector(projectId, selector));
     }
 
-    @PatchMapping("/{selector}/note")
-    public ContactResponse updateNote(@PathVariable String selector, @RequestBody UpdateContactNoteRequest request) {
-        var contact = contactLookupService.findBySelector(selector);
+    @PatchMapping("/projects/{projectId}/contacts/{selector}/note")
+    public ContactResponse updateProjectNote(
+            @PathVariable UUID projectId,
+            @PathVariable String selector,
+            @RequestBody UpdateContactNoteRequest request
+    ) {
+        var contact = contactLookupService.findBySelector(projectId, selector);
         contact.setNote(request.note());
         return contactMapper.toResponse(contactService.save(contact));
     }

@@ -1,10 +1,12 @@
 package com.pdasilem.contactwork.inbox;
 
-import com.pdasilem.contactwork.config.AppProperties;
 import com.pdasilem.contactwork.contact.Contact;
 import com.pdasilem.contactwork.contact.ContactRepository;
 import com.pdasilem.contactwork.contact.ContactStatus;
 import com.pdasilem.contactwork.history.ContactMessageService;
+import com.pdasilem.contactwork.project.Project;
+import com.pdasilem.contactwork.project.ProjectService;
+import com.pdasilem.contactwork.project.ProjectStatus;
 import jakarta.mail.Address;
 import jakarta.mail.Folder;
 import jakarta.mail.Message;
@@ -21,6 +23,7 @@ import java.time.OffsetDateTime;
 import java.util.Arrays;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
@@ -32,41 +35,41 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class InboxSyncService {
     private static final Logger log = LoggerFactory.getLogger(InboxSyncService.class);
-    private static final short SINGLE_ROW_ID = 1;
     private static final Pattern MESSAGE_ID_PATTERN = Pattern.compile("<[^>]+>");
     private static final String IMAP_HOST = "imap.gmail.com";
     private static final int IMAP_PORT = 993;
 
-    private final AppProperties appProperties;
     private final ContactRepository contactRepository;
     private final MailSyncStateRepository mailSyncStateRepository;
     private final ContactMessageService contactMessageService;
+    private final ProjectService projectService;
 
     public InboxSyncService(
-            AppProperties appProperties,
             ContactRepository contactRepository,
             MailSyncStateRepository mailSyncStateRepository,
-            ContactMessageService contactMessageService
+            ContactMessageService contactMessageService,
+            ProjectService projectService
     ) {
-        this.appProperties = appProperties;
         this.contactRepository = contactRepository;
         this.mailSyncStateRepository = mailSyncStateRepository;
         this.contactMessageService = contactMessageService;
+        this.projectService = projectService;
     }
 
     @Scheduled(cron = "${app.mail.inbox-sync-cron}")
     public void scheduledSync() {
-        if (!isConfigured()) {
-            return;
-        }
-        syncInbox();
+        projectService.findAll().stream()
+                .filter(project -> project.getStatus() == ProjectStatus.ACTIVE)
+                .filter(this::isConfigured)
+                .forEach(project -> syncInbox(project.getId()));
     }
 
-    public void verifyConnections() {
-        if (!isConfigured()) {
+    public void verifyConnections(UUID projectId) {
+        Project project = projectService.getProject(projectId);
+        if (!isConfigured(project)) {
             throw new IllegalStateException("Mail credentials are not configured");
         }
-        try (Store store = createImapStore()) {
+        try (Store store = createImapStore(project)) {
             // Store is already connected in createImapStore.
         } catch (Exception ex) {
             throw new IllegalStateException("Failed to connect to IMAP", ex);
@@ -74,15 +77,16 @@ public class InboxSyncService {
     }
 
     @Transactional
-    public void syncInbox() {
-        if (!isConfigured()) {
+    public void syncInbox(UUID projectId) {
+        Project project = projectService.getProject(projectId);
+        if (!isConfigured(project)) {
             throw new IllegalStateException("Mail credentials are not configured");
         }
 
-        MailSyncState state = mailSyncStateRepository.findById(SINGLE_ROW_ID)
-                .orElseThrow(() -> new IllegalStateException("mail_sync_state row is missing"));
+        MailSyncState state = mailSyncStateRepository.findById(projectId)
+                .orElseGet(() -> newSyncState(project));
 
-        try (Store store = createImapStore()) {
+        try (Store store = createImapStore(project)) {
             Folder inbox = store.getFolder("INBOX");
             inbox.open(Folder.READ_ONLY);
             UIDFolder uidFolder = (UIDFolder) inbox;
@@ -92,7 +96,7 @@ public class InboxSyncService {
             if (messages != null) {
                 for (Message message : messages) {
                     long uid = uidFolder.getUID(message);
-                    processMessage(message);
+                    processMessage(project, message);
                     maxUid = Math.max(maxUid, uid);
                 }
             }
@@ -105,35 +109,35 @@ public class InboxSyncService {
         }
     }
 
-    private void processMessage(Message message) throws Exception {
+    private void processMessage(Project project, Message message) throws Exception {
         Optional<String> replyReference = firstHeader(message, "In-Reply-To");
         if (replyReference.isEmpty()) {
             replyReference = firstHeader(message, "References");
         }
 
         if (replyReference.isPresent()) {
-            updateReplyStatus(message, replyReference.get());
+            updateReplyStatus(project, message, replyReference.get());
             return;
         }
 
         if (isBounce(message)) {
             extractMessageId(message).ifPresentOrElse(
-                    messageId -> updateBounceStatus(message, messageId),
+                    messageId -> updateBounceStatus(project, message, messageId),
                     () -> log.warn("Bounce message did not contain a matchable outbound message id")
             );
         }
     }
 
-    private void updateReplyStatus(Message message, String headerValue) throws Exception {
+    private void updateReplyStatus(Project project, Message message, String headerValue) throws Exception {
         findFirstMessageId(headerValue)
-                .flatMap(contactRepository::findByOutboundMessageId)
+                .flatMap(messageId -> contactRepository.findByProjectIdAndOutboundMessageId(project.getId(), messageId))
                 .ifPresent(contact -> {
                     markReplied(contact, message, findFirstMessageId(headerValue).orElse(null));
                 });
     }
 
-    private void updateBounceStatus(Message message, String messageId) {
-        contactRepository.findByOutboundMessageId(messageId).ifPresent(contact -> {
+    private void updateBounceStatus(Project project, Message message, String messageId) {
+        contactRepository.findByProjectIdAndOutboundMessageId(project.getId(), messageId).ifPresent(contact -> {
             contact.setStatus(ContactStatus.BOUNCED);
             if (contact.getBounceReceivedAt() == null) {
                 contact.setBounceReceivedAt(messageTimestamp(message));
@@ -255,7 +259,7 @@ public class InboxSyncService {
         return Optional.empty();
     }
 
-    private Store createImapStore() throws Exception {
+    private Store createImapStore(Project project) throws Exception {
         Properties properties = new Properties();
         properties.put("mail.store.protocol", "imaps");
         properties.put("mail.imaps.host", IMAP_HOST);
@@ -265,17 +269,24 @@ public class InboxSyncService {
         Store store = session.getStore("imaps");
         store.connect(
                 IMAP_HOST,
-                appProperties.mail().gmail().username(),
-                appProperties.mail().gmail().appPassword()
+                project.getGmailUsername(),
+                project.getGmailAppPassword()
         );
         return store;
     }
 
-    private boolean isConfigured() {
-        return appProperties.mail().gmail().username() != null
-                && !appProperties.mail().gmail().username().isBlank()
-                && appProperties.mail().gmail().appPassword() != null
-                && !appProperties.mail().gmail().appPassword().isBlank();
+    private boolean isConfigured(Project project) {
+        return project.getGmailUsername() != null
+                && !project.getGmailUsername().isBlank()
+                && project.getGmailAppPassword() != null
+                && !project.getGmailAppPassword().isBlank();
+    }
+
+    private MailSyncState newSyncState(Project project) {
+        MailSyncState state = new MailSyncState();
+        state.setProject(project);
+        state.setLastProcessedUid(0);
+        return state;
     }
 
     private OffsetDateTime messageTimestamp(Message message) {

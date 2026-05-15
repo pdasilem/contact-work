@@ -5,9 +5,13 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import com.pdasilem.contactwork.project.Project;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -18,6 +22,10 @@ public class Contact {
     @Id
     private UUID id;
 
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "project_id", nullable = false)
+    private Project project;
+
     @Column(name = "organization_name", nullable = false)
     private String organizationName;
 
@@ -27,7 +35,7 @@ public class Contact {
     @Column(name = "contact_name", nullable = false)
     private String contactName;
 
-    @Column(name = "email", nullable = false, unique = true)
+    @Column(name = "email", nullable = false)
     private String email;
 
     @Column(name = "preclinical_notes")
@@ -82,6 +90,14 @@ public class Contact {
 
     public void setId(UUID id) {
         this.id = id;
+    }
+
+    public Project getProject() {
+        return project;
+    }
+
+    public void setProject(Project project) {
+        this.project = project;
     }
 
     public String getOrganizationName() {

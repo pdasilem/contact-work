@@ -6,6 +6,7 @@ import java.util.UUID;
 
 public record ContactResponse(
         UUID id,
+        UUID projectId,
         String organizationName,
         String country,
         String contactName,

@@ -16,8 +16,8 @@ public class ContactMessageService {
         this.contactMessageRepository = contactMessageRepository;
     }
 
-    public List<ContactMessage> findByContactId(UUID contactId) {
-        return contactMessageRepository.findByContactIdOrderByMessageTimestampAsc(contactId);
+    public List<ContactMessage> findByProjectIdAndContactId(UUID projectId, UUID contactId) {
+        return contactMessageRepository.findByProjectIdAndContactIdOrderByMessageTimestampAsc(projectId, contactId);
     }
 
     public boolean existsByMessageId(String messageId) {
@@ -82,6 +82,7 @@ public class ContactMessageService {
     ) {
         ContactMessage message = new ContactMessage();
         message.setId(UUID.randomUUID());
+        message.setProject(contact.getProject());
         message.setContact(contact);
         message.setDirection(direction);
         message.setEventType(eventType);

@@ -1,30 +1,30 @@
 package com.pdasilem.contactwork.mail;
 
 import com.pdasilem.contactwork.inbox.InboxSyncService;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.JavaMailSenderImpl;
+import com.pdasilem.contactwork.project.ProjectService;
+import java.util.UUID;
 import org.springframework.stereotype.Service;
 
 @Service
 public class MailHealthService {
 
-    private final JavaMailSenderImpl javaMailSender;
     private final InboxSyncService inboxSyncService;
+    private final OutboundMailService outboundMailService;
+    private final ProjectService projectService;
 
-    public MailHealthService(JavaMailSender javaMailSender, InboxSyncService inboxSyncService) {
-        if (!(javaMailSender instanceof JavaMailSenderImpl sender)) {
-            throw new IllegalStateException("Expected JavaMailSenderImpl");
-        }
-        this.javaMailSender = sender;
+    public MailHealthService(
+            InboxSyncService inboxSyncService,
+            OutboundMailService outboundMailService,
+            ProjectService projectService
+    ) {
         this.inboxSyncService = inboxSyncService;
+        this.outboundMailService = outboundMailService;
+        this.projectService = projectService;
     }
 
-    public void verifyConnections() {
-        try {
-            javaMailSender.testConnection();
-        } catch (Exception ex) {
-            throw new IllegalStateException("Failed to connect to SMTP", ex);
-        }
-        inboxSyncService.verifyConnections();
+    public void verifyConnections(UUID projectId) {
+        var project = projectService.getProject(projectId);
+        outboundMailService.verifySmtp(project);
+        inboxSyncService.verifyConnections(projectId);
     }
 }

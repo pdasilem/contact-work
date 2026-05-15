@@ -7,7 +7,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.pdasilem.contactwork.api.ImportContactsResponse;
+import com.pdasilem.contactwork.project.Project;
+import com.pdasilem.contactwork.project.ProjectService;
 import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,13 +25,21 @@ class ContactImportServiceTest {
     @Mock
     private ContactRepository contactRepository;
 
+    @Mock
+    private ProjectService projectService;
+
     @Test
     void shouldImportOnlyNewValidContacts() {
-        ContactImportService service = new ContactImportService(contactRepository);
+        UUID projectId = Project.DEFAULT_PROJECT_ID;
+        Project project = new Project();
+        project.setId(projectId);
+        project.setName("Default Project");
+        ContactImportService service = new ContactImportService(contactRepository, projectService);
         AtomicBoolean existingSeen = new AtomicBoolean(false);
 
-        when(contactRepository.existsByEmail("existing@example.com")).thenReturn(true);
-        when(contactRepository.existsByEmail("new@example.com")).thenReturn(false);
+        when(projectService.getProject(projectId)).thenReturn(project);
+        when(contactRepository.existsByProjectIdAndEmail(projectId, "existing@example.com")).thenReturn(true);
+        when(contactRepository.existsByProjectIdAndEmail(projectId, "new@example.com")).thenReturn(false);
         when(contactRepository.save(any(Contact.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         String csv = "\uFEFFidx,organization,country,contact,email,notes\n"
@@ -43,7 +54,7 @@ class ContactImportServiceTest {
                 csv.getBytes(StandardCharsets.UTF_8)
         );
 
-        ImportContactsResponse response = service.importContacts(file);
+        ImportContactsResponse response = service.importContacts(projectId, file);
 
         assertThat(response.totalRows()).isEqualTo(3);
         assertThat(response.inserted()).isEqualTo(1);
@@ -56,6 +67,7 @@ class ContactImportServiceTest {
         assertThat(savedContact.getOrganizationName()).isEqualTo("Org Two");
         assertThat(savedContact.getContactName()).isEqualTo("New Person");
         assertThat(savedContact.getEmail()).isEqualTo("new@example.com");
+        assertThat(savedContact.getProject()).isEqualTo(project);
         assertThat(savedContact.getStatus()).isEqualTo(ContactStatus.NEW);
     }
 }

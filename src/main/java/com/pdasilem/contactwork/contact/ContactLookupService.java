@@ -13,14 +13,14 @@ public class ContactLookupService {
         this.contactRepository = contactRepository;
     }
 
-    public Contact findBySelector(String selector) {
+    public Contact findBySelector(UUID projectId, String selector) {
         if (selector == null || selector.isBlank()) {
             throw new IllegalArgumentException("Selector must not be blank");
         }
         if (selector.contains("@")) {
             String normalizedEmail = EmailUtils.normalize(selector);
-            return contactRepository.findByEmail(normalizedEmail)
-                    .orElseThrow(() -> new IllegalArgumentException("Contact not found by email: " + selector));
+            return contactRepository.findByProjectIdAndEmail(projectId, normalizedEmail)
+                    .orElseThrow(() -> new IllegalArgumentException("Contact not found by email in project " + projectId + ": " + selector));
         }
         final UUID contactId;
         try {
@@ -28,7 +28,7 @@ public class ContactLookupService {
         } catch (IllegalArgumentException ex) {
             throw new IllegalArgumentException("Selector must be a contact UUID or an email address: " + selector);
         }
-        return contactRepository.findById(contactId)
-                .orElseThrow(() -> new IllegalArgumentException("Contact not found: " + selector));
+        return contactRepository.findByProjectIdAndId(projectId, contactId)
+                .orElseThrow(() -> new IllegalArgumentException("Contact not found in project " + projectId + ": " + selector));
     }
 }

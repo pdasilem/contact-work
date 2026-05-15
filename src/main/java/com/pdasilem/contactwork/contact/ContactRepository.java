@@ -7,9 +7,10 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 public interface ContactRepository extends JpaRepository<Contact, UUID>, JpaSpecificationExecutor<Contact> {
-    boolean existsByEmail(String email);
-    Optional<Contact> findByEmail(String email);
-    Optional<Contact> findByOutboundMessageId(String outboundMessageId);
-    List<Contact> findByStatusOrderByCreatedAtAsc(ContactStatus status);
-    long countByStatus(ContactStatus status);
+    boolean existsByProjectIdAndEmail(UUID projectId, String email);
+    Optional<Contact> findByProjectIdAndId(UUID projectId, UUID id);
+    Optional<Contact> findByProjectIdAndEmail(UUID projectId, String email);
+    Optional<Contact> findByProjectIdAndOutboundMessageId(UUID projectId, String outboundMessageId);
+    List<Contact> findByProjectIdAndStatusOrderByCreatedAtAsc(UUID projectId, ContactStatus status);
+    long countByProjectIdAndStatus(UUID projectId, ContactStatus status);
 }

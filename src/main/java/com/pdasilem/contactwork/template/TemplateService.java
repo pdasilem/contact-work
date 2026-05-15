@@ -1,6 +1,7 @@
 package com.pdasilem.contactwork.template;
 
 import com.pdasilem.contactwork.config.AppProperties;
+import com.pdasilem.contactwork.project.Project;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -32,12 +33,12 @@ public class TemplateService {
         this.pdfConversionService = pdfConversionService;
     }
 
-    public GeneratedLetter generateLetterPdf(String contactName) {
+    public GeneratedLetter generateLetterPdf(Project project, String contactName) {
         try {
             Path workingDir = Files.createDirectories(Path.of(appProperties.resources().workingDir()));
             Path jobDir = Files.createTempDirectory(workingDir, "letter-");
             Path docxPath = jobDir.resolve("letter.docx");
-            Resource templateResource = resourceLoader.getResource(appProperties.resources().letterTemplate());
+            Resource templateResource = resourceLoader.getResource(project.getLetterTemplate());
             try (InputStream inputStream = templateResource.getInputStream();
                  XWPFDocument document = new XWPFDocument(inputStream)) {
                 replaceInDocument(document, contactName);
@@ -53,8 +54,8 @@ public class TemplateService {
         }
     }
 
-    public Resource getPitchDeckResource() {
-        return resourceLoader.getResource(appProperties.resources().pitchDeck());
+    public Resource getPitchDeckResource(Project project) {
+        return resourceLoader.getResource(project.getPitchDeck());
     }
 
     private void replaceInDocument(XWPFDocument document, String contactName) {

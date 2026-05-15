@@ -16,9 +16,10 @@ public class ContactService {
         this.contactRepository = contactRepository;
     }
 
-    public List<Contact> findContacts(ContactStatus status, String email, String organization) {
+    public List<Contact> findContacts(UUID projectId, ContactStatus status, String email, String organization) {
         Specification<Contact> specification = (root, query, criteriaBuilder) -> {
             List<Predicate> predicates = new ArrayList<>();
+            predicates.add(criteriaBuilder.equal(root.get("project").get("id"), projectId));
             if (status != null) {
                 predicates.add(criteriaBuilder.equal(root.get("status"), status));
             }
@@ -33,21 +34,21 @@ public class ContactService {
         return contactRepository.findAll(specification);
     }
 
-    public Contact getContact(UUID id) {
-        return contactRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Contact not found: " + id));
+    public Contact getContact(UUID projectId, UUID id) {
+        return contactRepository.findByProjectIdAndId(projectId, id)
+                .orElseThrow(() -> new IllegalArgumentException("Contact not found in project " + projectId + ": " + id));
     }
 
     public Contact save(Contact contact) {
         return contactRepository.save(contact);
     }
 
-    public Contact findByEmail(String email) {
-        return contactRepository.findByEmail(email)
-                .orElseThrow(() -> new IllegalArgumentException("Contact not found by email: " + email));
+    public Contact findByEmail(UUID projectId, String email) {
+        return contactRepository.findByProjectIdAndEmail(projectId, email)
+                .orElseThrow(() -> new IllegalArgumentException("Contact not found by email in project " + projectId + ": " + email));
     }
 
-    public long countByStatus(ContactStatus status) {
-        return contactRepository.countByStatus(status);
+    public long countByStatus(UUID projectId, ContactStatus status) {
+        return contactRepository.countByProjectIdAndStatus(projectId, status);
     }
 }

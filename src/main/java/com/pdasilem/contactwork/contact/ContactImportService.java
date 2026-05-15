@@ -6,6 +6,8 @@ import com.fasterxml.jackson.dataformat.csv.CsvMapper;
 import com.fasterxml.jackson.dataformat.csv.CsvSchema;
 import com.pdasilem.contactwork.api.ImportContactsResponse;
 import com.pdasilem.contactwork.common.EmailUtils;
+import com.pdasilem.contactwork.project.Project;
+import com.pdasilem.contactwork.project.ProjectService;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PushbackInputStream;
@@ -27,19 +29,22 @@ public class ContactImportService {
     private static final int NOTES_INDEX = 5;
 
     private final ContactRepository contactRepository;
+    private final ProjectService projectService;
     private final CsvMapper csvMapper = CsvMapper.builder()
             .enable(CsvParser.Feature.WRAP_AS_ARRAY)
             .build();
 
-    public ContactImportService(ContactRepository contactRepository) {
+    public ContactImportService(ContactRepository contactRepository, ProjectService projectService) {
         this.contactRepository = contactRepository;
+        this.projectService = projectService;
     }
 
     @Transactional
-    public ImportContactsResponse importContacts(MultipartFile file) {
+    public ImportContactsResponse importContacts(UUID projectId, MultipartFile file) {
         if (file.isEmpty()) {
             throw new IllegalArgumentException("CSV file is empty");
         }
+        Project project = projectService.getProject(projectId);
 
         int totalRows = 0;
         int inserted = 0;
@@ -74,13 +79,14 @@ public class ContactImportService {
                     continue;
                 }
 
-                if (contactRepository.existsByEmail(normalizedEmail)) {
+                if (contactRepository.existsByProjectIdAndEmail(projectId, normalizedEmail)) {
                     skippedExisting++;
                     continue;
                 }
 
                 Contact contact = new Contact();
                 contact.setId(UUID.randomUUID());
+                contact.setProject(project);
                 contact.setOrganizationName(trimToEmpty(row[ORGANIZATION_INDEX]));
                 contact.setCountry(trimToNull(row[COUNTRY_INDEX]));
                 contact.setContactName(trimToEmpty(row[CONTACT_NAME_INDEX]));

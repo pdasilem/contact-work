@@ -1,13 +1,15 @@
 package com.pdasilem.contactwork.mail;
 
 import com.pdasilem.contactwork.api.SendStatusResponse;
-import com.pdasilem.contactwork.config.AppProperties;
 import com.pdasilem.contactwork.contact.Contact;
 import com.pdasilem.contactwork.contact.ContactRepository;
 import com.pdasilem.contactwork.contact.ContactStatus;
+import com.pdasilem.contactwork.project.Project;
+import com.pdasilem.contactwork.project.ProjectService;
 import com.pdasilem.contactwork.template.TemplateService;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,7 +24,7 @@ public class SendCoordinator {
     private final ContactRepository contactRepository;
     private final TemplateService templateService;
     private final OutboundMailService outboundMailService;
-    private final AppProperties appProperties;
+    private final ProjectService projectService;
     private final TaskExecutor taskExecutor;
     private final AtomicBoolean running = new AtomicBoolean(false);
 
@@ -30,42 +32,43 @@ public class SendCoordinator {
             ContactRepository contactRepository,
             TemplateService templateService,
             OutboundMailService outboundMailService,
-            AppProperties appProperties,
+            ProjectService projectService,
             TaskExecutor taskExecutor
     ) {
         this.contactRepository = contactRepository;
         this.templateService = templateService;
         this.outboundMailService = outboundMailService;
-        this.appProperties = appProperties;
+        this.projectService = projectService;
         this.taskExecutor = taskExecutor;
     }
 
-    public void start() {
+    public void start(UUID projectId) {
         if (!running.compareAndSet(false, true)) {
             throw new IllegalStateException("Send process is already running");
         }
-        taskExecutor.execute(this::runSendLoop);
+        taskExecutor.execute(() -> runSendLoop(projectId));
     }
 
-    public SendStatusResponse getStatus() {
+    public SendStatusResponse getStatus(UUID projectId) {
         return new SendStatusResponse(
                 running.get(),
                 "BATCH endpoint processes NEW contacts only; single-contact endpoint can also retry SEND_FAILED contacts",
-                contactRepository.countByStatus(ContactStatus.NEW),
-                contactRepository.countByStatus(ContactStatus.NEW),
-                contactRepository.countByStatus(ContactStatus.SENT),
-                contactRepository.countByStatus(ContactStatus.SEND_FAILED),
-                contactRepository.countByStatus(ContactStatus.BOUNCED),
-                contactRepository.countByStatus(ContactStatus.REPLIED)
+                contactRepository.countByProjectIdAndStatus(projectId, ContactStatus.NEW),
+                contactRepository.countByProjectIdAndStatus(projectId, ContactStatus.NEW),
+                contactRepository.countByProjectIdAndStatus(projectId, ContactStatus.SENT),
+                contactRepository.countByProjectIdAndStatus(projectId, ContactStatus.SEND_FAILED),
+                contactRepository.countByProjectIdAndStatus(projectId, ContactStatus.BOUNCED),
+                contactRepository.countByProjectIdAndStatus(projectId, ContactStatus.REPLIED)
         );
     }
 
-    private void runSendLoop() {
+    private void runSendLoop(UUID projectId) {
         try {
-            List<Contact> contacts = contactRepository.findByStatusOrderByCreatedAtAsc(ContactStatus.NEW);
+            Project project = projectService.getProject(projectId);
+            List<Contact> contacts = contactRepository.findByProjectIdAndStatusOrderByCreatedAtAsc(projectId, ContactStatus.NEW);
             for (Contact contact : contacts) {
-                processContact(contact.getId());
-                sleepDelay();
+                processContact(projectId, contact.getId());
+                sleepDelay(project);
             }
         } finally {
             running.set(false);
@@ -73,9 +76,9 @@ public class SendCoordinator {
     }
 
     @Transactional
-    public void processContact(java.util.UUID contactId) {
-        Contact contact = contactRepository.findById(contactId)
-                .orElseThrow(() -> new IllegalArgumentException("Contact not found: " + contactId));
+    public void processContact(UUID projectId, UUID contactId) {
+        Contact contact = contactRepository.findByProjectIdAndId(projectId, contactId)
+                .orElseThrow(() -> new IllegalArgumentException("Contact not found in project " + projectId + ": " + contactId));
         if (contact.getStatus() != ContactStatus.NEW && contact.getStatus() != ContactStatus.SEND_FAILED) {
             return;
         }
@@ -88,8 +91,8 @@ public class SendCoordinator {
         try {
             String messageId = outboundMailService.send(
                     contact,
-                    templateService.generateLetterPdf(contact.getContactName()),
-                    templateService.getPitchDeckResource()
+                    templateService.generateLetterPdf(contact.getProject(), contact.getContactName()),
+                    templateService.getPitchDeckResource(contact.getProject())
             );
             contact.setOutboundMessageId(messageId);
             contact.setSentAt(OffsetDateTime.now());
@@ -105,16 +108,16 @@ public class SendCoordinator {
         }
     }
 
-    private void sleepDelay() {
+    private void sleepDelay(Project project) {
         try {
-            Thread.sleep(Math.max(0, appProperties.mail().sendDelayMs()));
+            Thread.sleep(Math.max(0, project.getSendDelayMs()));
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Send loop interrupted", ex);
         }
     }
 
-    public void sendSingle(java.util.UUID contactId) {
-        processContact(contactId);
+    public void sendSingle(UUID projectId, UUID contactId) {
+        processContact(projectId, contactId);
     }
 }

@@ -8,6 +8,7 @@ import com.pdasilem.contactwork.config.AppProperties;
 import com.pdasilem.contactwork.contact.Contact;
 import com.pdasilem.contactwork.contact.ContactStatus;
 import com.pdasilem.contactwork.history.ContactMessageService;
+import com.pdasilem.contactwork.project.Project;
 import com.pdasilem.contactwork.template.GeneratedLetter;
 import jakarta.mail.BodyPart;
 import jakarta.mail.Multipart;
@@ -66,6 +67,15 @@ class OutboundMailServiceTest {
 
         Contact contact = new Contact();
         contact.setId(UUID.randomUUID());
+        Project project = new Project();
+        project.setId(Project.DEFAULT_PROJECT_ID);
+        project.setName("Default Project");
+        project.setMailSubject("Outbound Test");
+        project.setMailBody("Body line");
+        project.setMailFrom("sender@localhost");
+        project.setLetterAttachmentFilename("letter.pdf");
+        project.setPitchDeckAttachmentFilename("Pitch_deck_en.pdf");
+        contact.setProject(project);
         contact.setEmail("receiver@localhost");
         contact.setContactName("Receiver");
         contact.setOrganizationName("Org");
