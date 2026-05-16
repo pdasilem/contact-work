@@ -1,12 +1,12 @@
 package com.pdasilem.contactwork.inbox;
 
+import com.pdasilem.contactwork.config.AppProperties;
 import com.pdasilem.contactwork.contact.Contact;
 import com.pdasilem.contactwork.contact.ContactRepository;
 import com.pdasilem.contactwork.contact.ContactStatus;
 import com.pdasilem.contactwork.history.ContactMessageService;
 import com.pdasilem.contactwork.project.Project;
 import com.pdasilem.contactwork.project.ProjectService;
-import com.pdasilem.contactwork.project.ProjectStatus;
 import jakarta.mail.Address;
 import jakarta.mail.Folder;
 import jakarta.mail.Message;
@@ -28,7 +28,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,25 +42,20 @@ public class InboxSyncService {
     private final MailSyncStateRepository mailSyncStateRepository;
     private final ContactMessageService contactMessageService;
     private final ProjectService projectService;
+    private final AppProperties appProperties;
 
     public InboxSyncService(
             ContactRepository contactRepository,
             MailSyncStateRepository mailSyncStateRepository,
             ContactMessageService contactMessageService,
-            ProjectService projectService
+            ProjectService projectService,
+            AppProperties appProperties
     ) {
         this.contactRepository = contactRepository;
         this.mailSyncStateRepository = mailSyncStateRepository;
         this.contactMessageService = contactMessageService;
         this.projectService = projectService;
-    }
-
-    @Scheduled(cron = "${app.mail.inbox-sync-cron}")
-    public void scheduledSync() {
-        projectService.findAll().stream()
-                .filter(project -> project.getStatus() == ProjectStatus.ACTIVE)
-                .filter(this::isConfigured)
-                .forEach(project -> syncInbox(project.getId()));
+        this.appProperties = appProperties;
     }
 
     public void verifyConnections(UUID projectId) {
@@ -86,6 +80,11 @@ public class InboxSyncService {
         MailSyncState state = mailSyncStateRepository.findById(projectId)
                 .orElseGet(() -> newSyncState(project));
 
+        String username = resolvedGmailUsername(project);
+        log.info("Starting inbox sync for project {} mailbox {}", projectId, username);
+        int scannedCount = 0;
+        int replyCount = 0;
+        int bounceCount = 0;
         try (Store store = createImapStore(project)) {
             Folder inbox = store.getFolder("INBOX");
             inbox.open(Folder.READ_ONLY);
@@ -96,7 +95,17 @@ public class InboxSyncService {
             if (messages != null) {
                 for (Message message : messages) {
                     long uid = uidFolder.getUID(message);
-                    processMessage(project, message);
+                    scannedCount++;
+                    try {
+                        SyncOutcome outcome = processMessage(project, message);
+                        if (outcome == SyncOutcome.REPLY) {
+                            replyCount++;
+                        } else if (outcome == SyncOutcome.BOUNCE) {
+                            bounceCount++;
+                        }
+                    } catch (Exception ex) {
+                        throw new IllegalStateException("Failed to process inbox message UID " + uid, ex);
+                    }
                     maxUid = Math.max(maxUid, uid);
                 }
             }
@@ -104,48 +113,67 @@ public class InboxSyncService {
             state.setLastProcessedUid(maxUid);
             mailSyncStateRepository.save(state);
             inbox.close(false);
+            log.info(
+                    "Finished inbox sync for project {} mailbox {} scanned={} replies={} bounces={} lastUid={}",
+                    projectId,
+                    username,
+                    scannedCount,
+                    replyCount,
+                    bounceCount,
+                    maxUid
+            );
         } catch (Exception ex) {
             throw new IllegalStateException("Failed to sync inbox", ex);
         }
     }
 
-    private void processMessage(Project project, Message message) throws Exception {
+    private SyncOutcome processMessage(Project project, Message message) throws Exception {
         Optional<String> replyReference = firstHeader(message, "In-Reply-To");
         if (replyReference.isEmpty()) {
             replyReference = firstHeader(message, "References");
         }
 
         if (replyReference.isPresent()) {
-            updateReplyStatus(project, message, replyReference.get());
-            return;
+            return updateReplyStatus(project, message, replyReference.get()) ? SyncOutcome.REPLY : SyncOutcome.NONE;
         }
 
         if (isBounce(message)) {
-            extractMessageId(message).ifPresentOrElse(
-                    messageId -> updateBounceStatus(project, message, messageId),
-                    () -> log.warn("Bounce message did not contain a matchable outbound message id")
-            );
-        }
-    }
-
-    private void updateReplyStatus(Project project, Message message, String headerValue) throws Exception {
-        findFirstMessageId(headerValue)
-                .flatMap(messageId -> contactRepository.findByProjectIdAndOutboundMessageId(project.getId(), messageId))
-                .ifPresent(contact -> {
-                    markReplied(contact, message, findFirstMessageId(headerValue).orElse(null));
-                });
-    }
-
-    private void updateBounceStatus(Project project, Message message, String messageId) {
-        contactRepository.findByProjectIdAndOutboundMessageId(project.getId(), messageId).ifPresent(contact -> {
-            contact.setStatus(ContactStatus.BOUNCED);
-            if (contact.getBounceReceivedAt() == null) {
-                contact.setBounceReceivedAt(messageTimestamp(message));
+            Optional<String> messageId = extractMessageId(message);
+            if (messageId.isPresent()) {
+                return updateBounceStatus(project, message, messageId.get()) ? SyncOutcome.BOUNCE : SyncOutcome.NONE;
             }
-            contactRepository.save(contact);
-            recordInboundMessage(contact, message, messageId, true);
-            log.info("Marked contact {} as BOUNCED", contact.getEmail());
-        });
+            log.warn("Bounce message did not contain a matchable outbound message id");
+        }
+        return SyncOutcome.NONE;
+    }
+
+    private boolean updateReplyStatus(Project project, Message message, String headerValue) throws Exception {
+        Optional<String> messageId = findFirstMessageId(headerValue);
+        if (messageId.isEmpty()) {
+            return false;
+        }
+        Optional<Contact> contact = contactRepository.findByProjectIdAndOutboundMessageId(project.getId(), messageId.get());
+        if (contact.isEmpty()) {
+            return false;
+        }
+        markReplied(contact.get(), message, messageId.get());
+        return true;
+    }
+
+    private boolean updateBounceStatus(Project project, Message message, String messageId) {
+        Optional<Contact> contact = contactRepository.findByProjectIdAndOutboundMessageId(project.getId(), messageId);
+        if (contact.isEmpty()) {
+            return false;
+        }
+        Contact matchedContact = contact.get();
+        matchedContact.setStatus(ContactStatus.BOUNCED);
+        if (matchedContact.getBounceReceivedAt() == null) {
+            matchedContact.setBounceReceivedAt(messageTimestamp(message));
+        }
+        contactRepository.save(matchedContact);
+        recordInboundMessage(matchedContact, message, messageId, true);
+        log.info("Marked contact {} as BOUNCED", matchedContact.getEmail());
+        return true;
     }
 
     private void markReplied(Contact contact, Message message, String relatedMessageId) {
@@ -269,17 +297,32 @@ public class InboxSyncService {
         Store store = session.getStore("imaps");
         store.connect(
                 IMAP_HOST,
-                project.getGmailUsername(),
-                project.getGmailAppPassword()
+                resolvedGmailUsername(project),
+                resolvedGmailAppPassword(project)
         );
         return store;
     }
 
-    private boolean isConfigured(Project project) {
-        return project.getGmailUsername() != null
-                && !project.getGmailUsername().isBlank()
-                && project.getGmailAppPassword() != null
-                && !project.getGmailAppPassword().isBlank();
+    boolean isConfigured(Project project) {
+        return resolvedGmailUsername(project) != null
+                && resolvedGmailAppPassword(project) != null;
+    }
+
+    private String resolvedGmailUsername(Project project) {
+        String projectValue = blankToNull(project.getGmailUsername());
+        return projectValue != null ? projectValue : blankToNull(appProperties.mail().gmail().username());
+    }
+
+    private String resolvedGmailAppPassword(Project project) {
+        String projectValue = blankToNull(project.getGmailAppPassword());
+        return projectValue != null ? projectValue : blankToNull(appProperties.mail().gmail().appPassword());
+    }
+
+    private String blankToNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
     }
 
     private MailSyncState newSyncState(Project project) {
@@ -329,5 +372,11 @@ public class InboxSyncService {
             return body.isEmpty() ? null : body.toString();
         }
         return null;
+    }
+
+    private enum SyncOutcome {
+        NONE,
+        REPLY,
+        BOUNCE
     }
 }

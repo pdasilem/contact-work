@@ -11,6 +11,9 @@ import com.pdasilem.contactwork.project.ProjectService;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PushbackInputStream;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,22 +24,25 @@ import org.springframework.web.multipart.MultipartFile;
 @Service
 public class ContactImportService {
     private static final Logger log = LoggerFactory.getLogger(ContactImportService.class);
-    private static final int MIN_COLUMNS = 6;
-    private static final int ORGANIZATION_INDEX = 1;
-    private static final int COUNTRY_INDEX = 2;
-    private static final int CONTACT_NAME_INDEX = 3;
-    private static final int EMAIL_INDEX = 4;
-    private static final int NOTES_INDEX = 5;
 
     private final ContactRepository contactRepository;
+    private final ContactCustomFieldRepository contactCustomFieldRepository;
     private final ProjectService projectService;
+    private final ProjectContactColumnService projectContactColumnService;
     private final CsvMapper csvMapper = CsvMapper.builder()
             .enable(CsvParser.Feature.WRAP_AS_ARRAY)
             .build();
 
-    public ContactImportService(ContactRepository contactRepository, ProjectService projectService) {
+    public ContactImportService(
+            ContactRepository contactRepository,
+            ContactCustomFieldRepository contactCustomFieldRepository,
+            ProjectService projectService,
+            ProjectContactColumnService projectContactColumnService
+    ) {
         this.contactRepository = contactRepository;
+        this.contactCustomFieldRepository = contactCustomFieldRepository;
         this.projectService = projectService;
+        this.projectContactColumnService = projectContactColumnService;
     }
 
     @Transactional
@@ -45,7 +51,7 @@ public class ContactImportService {
             throw new IllegalArgumentException("CSV file is empty");
         }
         try {
-            return importContacts(projectId, file.getOriginalFilename(), file.getInputStream());
+            return importContactsFromStream(projectId, file.getOriginalFilename(), file.getInputStream());
         } catch (IOException ex) {
             throw new IllegalArgumentException("Failed to read CSV file", ex);
         }
@@ -53,7 +59,12 @@ public class ContactImportService {
 
     @Transactional
     public ImportContactsResponse importContacts(UUID projectId, String filename, InputStream fileContent) {
+        return importContactsFromStream(projectId, filename, fileContent);
+    }
+
+    private ImportContactsResponse importContactsFromStream(UUID projectId, String filename, InputStream fileContent) {
         Project project = projectService.getProject(projectId);
+        log.info("CSV contact import started: projectId={}, filename={}", projectId, filename);
 
         int totalRows = 0;
         int inserted = 0;
@@ -70,20 +81,20 @@ public class ContactImportService {
             if (!iterator.hasNext()) {
                 throw new IllegalArgumentException("CSV file does not contain a header row");
             }
-            validateHeader(iterator.next());
+            String[] header = iterator.next();
+            validateHeader(header);
+            Map<String, Integer> columns = indexColumns(project, header);
+            Integer emailIndex = requiredColumn(columns, "email");
+            Integer organizationIndex = requiredColumn(columns, "organization_name");
 
             while (iterator.hasNext()) {
                 String[] row = iterator.next();
                 totalRows++;
 
-                if (row.length < MIN_COLUMNS) {
-                    skippedInvalid++;
-                    continue;
-                }
+                String normalizedEmail = EmailUtils.normalize(valueAt(row, emailIndex));
+                String organization = trimToEmpty(valueAt(row, organizationIndex));
 
-                String normalizedEmail = EmailUtils.normalize(row[EMAIL_INDEX]);
-
-                if (!EmailUtils.isValid(normalizedEmail)) {
+                if (!EmailUtils.isValid(normalizedEmail) || organization.isBlank()) {
                     skippedInvalid++;
                     continue;
                 }
@@ -96,28 +107,99 @@ public class ContactImportService {
                 Contact contact = new Contact();
                 contact.setId(UUID.randomUUID());
                 contact.setProject(project);
-                contact.setOrganizationName(trimToEmpty(row[ORGANIZATION_INDEX]));
-                contact.setCountry(trimToNull(row[COUNTRY_INDEX]));
-                contact.setContactName(trimToEmpty(row[CONTACT_NAME_INDEX]));
+                contact.setOrganizationName(organization);
+                contact.setContactName(defaultContactName(valueAt(row, columns.get("contact_name"))));
                 contact.setEmail(normalizedEmail);
-                contact.setPreclinicalNotes(trimToNull(row[NOTES_INDEX]));
+                contact.setNote(trimToNull(valueAt(row, columns.get("note"))));
                 contact.setStatus(ContactStatus.NEW);
                 contactRepository.save(contact);
+                saveCustomFields(project, contact, header, columns, row);
                 inserted++;
             }
         } catch (IOException ex) {
+            log.warn("CSV contact import failed: projectId={}, filename={}", projectId, filename, ex);
             throw new IllegalArgumentException("Failed to parse CSV: " + ex.getMessage(), ex);
+        } catch (RuntimeException ex) {
+            log.warn("CSV contact import failed: projectId={}, filename={}", projectId, filename, ex);
+            throw ex;
         }
 
-        log.info("Imported contacts from {}: totalRows={}, inserted={}, skippedExisting={}, skippedInvalid={}",
-                filename, totalRows, inserted, skippedExisting, skippedInvalid);
+        log.info("CSV contact import succeeded: projectId={}, filename={}, totalRows={}, inserted={}, skippedExisting={}, skippedInvalid={}",
+                projectId, filename, totalRows, inserted, skippedExisting, skippedInvalid);
         return new ImportContactsResponse(totalRows, inserted, skippedExisting, skippedInvalid);
     }
 
     private void validateHeader(String[] header) {
-        if (header.length < MIN_COLUMNS) {
-            throw new IllegalArgumentException("CSV header must contain at least " + MIN_COLUMNS + " columns");
+        if (header.length == 0) {
+            throw new IllegalArgumentException("CSV header is empty");
         }
+    }
+
+    private Map<String, Integer> indexColumns(Project project, String[] header) {
+        Map<String, Integer> columns = new HashMap<>();
+        for (int index = 0; index < header.length; index++) {
+            String label = trimToEmpty(header[index]);
+            String key = standardKey(label);
+            ContactColumnSource source = isStandard(key) ? ContactColumnSource.STANDARD : ContactColumnSource.CUSTOM;
+            projectContactColumnService.ensureColumn(project, key, label, source, index);
+            columns.putIfAbsent(key, index);
+        }
+        return columns;
+    }
+
+    private Integer requiredColumn(Map<String, Integer> columns, String key) {
+        Integer index = columns.get(key);
+        if (index == null) {
+            throw new IllegalArgumentException("CSV header must contain " + key);
+        }
+        return index;
+    }
+
+    private void saveCustomFields(Project project, Contact contact, String[] header, Map<String, Integer> columns, String[] row) {
+        for (int index = 0; index < header.length; index++) {
+            String key = standardKey(header[index]);
+            if (isStandard(key)) {
+                continue;
+            }
+            ContactCustomField field = new ContactCustomField();
+            field.setId(UUID.randomUUID());
+            field.setProject(project);
+            field.setContact(contact);
+            field.setFieldKey(key);
+            field.setFieldValue(trimToNull(valueAt(row, index)));
+            contactCustomFieldRepository.save(field);
+        }
+    }
+
+    private String defaultContactName(String value) {
+        String trimmed = trimToNull(value);
+        return trimmed == null ? "" : trimmed;
+    }
+
+    private String valueAt(String[] row, Integer index) {
+        if (index == null || index < 0 || index >= row.length) {
+            return null;
+        }
+        return row[index];
+    }
+
+    private boolean isStandard(String key) {
+        return "email".equals(key)
+                || "organization_name".equals(key)
+                || "contact_name".equals(key)
+                || "note".equals(key);
+    }
+
+    private String standardKey(String header) {
+        String normalized = trimToEmpty(header).toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9]+", "_")
+                .replaceAll("^_+|_+$", "");
+        return switch (normalized) {
+            case "organization", "org", "company", "organization_name" -> "organization_name";
+            case "contact", "contact_name", "name", "person" -> "contact_name";
+            case "note", "notes" -> "note";
+            default -> normalized;
+        };
     }
 
     private InputStream stripBom(InputStream inputStream) throws IOException {

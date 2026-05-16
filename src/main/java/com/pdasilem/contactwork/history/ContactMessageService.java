@@ -1,6 +1,7 @@
 package com.pdasilem.contactwork.history;
 
 import com.pdasilem.contactwork.contact.Contact;
+import com.pdasilem.contactwork.project.Project;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -26,6 +27,7 @@ public class ContactMessageService {
 
     @Transactional
     public ContactMessage recordOutbound(
+            Project project,
             Contact contact,
             String messageId,
             String subject,
@@ -34,7 +36,7 @@ public class ContactMessageService {
             String recipientEmail,
             OffsetDateTime messageTimestamp
     ) {
-        return save(contact, MessageDirection.OUTBOUND, MessageEventType.EMAIL, messageId, null,
+        return save(project, contact, MessageDirection.OUTBOUND, MessageEventType.EMAIL, messageId, null,
                 senderEmail, recipientEmail, subject, bodyText, messageTimestamp);
     }
 
@@ -49,7 +51,7 @@ public class ContactMessageService {
             String recipientEmail,
             OffsetDateTime messageTimestamp
     ) {
-        return save(contact, MessageDirection.INBOUND, MessageEventType.REPLY, messageId, relatedMessageId,
+        return save(contact.getProject(), contact, MessageDirection.INBOUND, MessageEventType.REPLY, messageId, relatedMessageId,
                 senderEmail, recipientEmail, subject, bodyText, messageTimestamp);
     }
 
@@ -64,11 +66,12 @@ public class ContactMessageService {
             String recipientEmail,
             OffsetDateTime messageTimestamp
     ) {
-        return save(contact, MessageDirection.INBOUND, MessageEventType.BOUNCE, messageId, relatedMessageId,
+        return save(contact.getProject(), contact, MessageDirection.INBOUND, MessageEventType.BOUNCE, messageId, relatedMessageId,
                 senderEmail, recipientEmail, subject, bodyText, messageTimestamp);
     }
 
     private ContactMessage save(
+            Project project,
             Contact contact,
             MessageDirection direction,
             MessageEventType eventType,
@@ -82,7 +85,7 @@ public class ContactMessageService {
     ) {
         ContactMessage message = new ContactMessage();
         message.setId(UUID.randomUUID());
-        message.setProject(contact.getProject());
+        message.setProject(project);
         message.setContact(contact);
         message.setDirection(direction);
         message.setEventType(eventType);

@@ -35,18 +35,11 @@ public class ProjectService {
     @Transactional
     public Project update(UUID projectId, Project updates) {
         Project project = getProject(projectId);
-        if (updates.getName() != null) {
-            project.setName(updates.getName());
-        }
-        project.setDescription(updates.getDescription());
         if (updates.getStatus() != null) {
             project.setStatus(updates.getStatus());
         }
         if (updates.getLetterTemplate() != null) {
             project.setLetterTemplate(updates.getLetterTemplate());
-        }
-        if (updates.getPitchDeck() != null) {
-            project.setPitchDeck(updates.getPitchDeck());
         }
         if (updates.getMailSubject() != null) {
             project.setMailSubject(updates.getMailSubject());
@@ -57,13 +50,12 @@ public class ProjectService {
         if (updates.getLetterAttachmentFilename() != null) {
             project.setLetterAttachmentFilename(updates.getLetterAttachmentFilename());
         }
-        if (updates.getPitchDeckAttachmentFilename() != null) {
-            project.setPitchDeckAttachmentFilename(updates.getPitchDeckAttachmentFilename());
-        }
         project.setMailFrom(updates.getMailFrom());
+        project.setMailFromName(updates.getMailFromName());
         if (updates.getSendDelayMs() >= 0) {
             project.setSendDelayMs(updates.getSendDelayMs());
         }
+        project.setMaxMessagesPerBatch(updates.getMaxMessagesPerBatch());
         if (updates.getInboxSyncCron() != null) {
             project.setInboxSyncCron(updates.getInboxSyncCron());
         }
@@ -72,42 +64,27 @@ public class ProjectService {
         return projectRepository.save(project);
     }
 
+    @Transactional
+    public Project updateSenderIdentity(
+            UUID projectId,
+            String mailFrom,
+            String mailFromName
+    ) {
+        Project project = getProject(projectId);
+        project.setMailFrom(mailFrom);
+        project.setMailFromName(mailFromName);
+        return projectRepository.save(project);
+    }
+
     private void applyDefaults(Project project) {
         if (project.getStatus() == null) {
-            project.setStatus(ProjectStatus.ACTIVE);
-        }
-        if (project.getLetterTemplate() == null) {
-            project.setLetterTemplate(appProperties.resources().letterTemplate());
-        }
-        if (project.getPitchDeck() == null) {
-            project.setPitchDeck(appProperties.resources().pitchDeck());
-        }
-        if (project.getMailSubject() == null) {
-            project.setMailSubject(appProperties.mail().subject());
-        }
-        if (project.getMailBody() == null) {
-            project.setMailBody(appProperties.mail().body());
-        }
-        if (project.getLetterAttachmentFilename() == null) {
-            project.setLetterAttachmentFilename(appProperties.mail().letterAttachmentFilename());
-        }
-        if (project.getPitchDeckAttachmentFilename() == null) {
-            project.setPitchDeckAttachmentFilename(appProperties.mail().pitchDeckAttachmentFilename());
-        }
-        if (project.getMailFrom() == null) {
-            project.setMailFrom(appProperties.mail().from());
+            project.setStatus(ProjectStatus.NEW);
         }
         if (project.getSendDelayMs() < 0) {
             project.setSendDelayMs(appProperties.mail().sendDelayMs());
         }
         if (project.getInboxSyncCron() == null) {
             project.setInboxSyncCron(appProperties.mail().inboxSyncCron());
-        }
-        if (project.getGmailUsername() == null) {
-            project.setGmailUsername(appProperties.mail().gmail().username());
-        }
-        if (project.getGmailAppPassword() == null) {
-            project.setGmailAppPassword(appProperties.mail().gmail().appPassword());
         }
     }
 

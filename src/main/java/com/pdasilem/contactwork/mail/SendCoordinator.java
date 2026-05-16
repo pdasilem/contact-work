@@ -6,43 +6,40 @@ import com.pdasilem.contactwork.contact.ContactRepository;
 import com.pdasilem.contactwork.contact.ContactStatus;
 import com.pdasilem.contactwork.project.Project;
 import com.pdasilem.contactwork.project.ProjectService;
-import com.pdasilem.contactwork.template.TemplateService;
-import java.time.OffsetDateTime;
+import com.pdasilem.contactwork.project.ProjectStatus;
+import com.pdasilem.contactwork.project.asset.ProjectAssetService;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class SendCoordinator {
-    private static final Logger log = LoggerFactory.getLogger(SendCoordinator.class);
-
     private final ContactRepository contactRepository;
-    private final TemplateService templateService;
-    private final OutboundMailService outboundMailService;
     private final ProjectService projectService;
+    private final ProjectAssetService projectAssetService;
+    private final ContactSendProcessor contactSendProcessor;
     private final TaskExecutor taskExecutor;
     private final AtomicBoolean running = new AtomicBoolean(false);
 
     public SendCoordinator(
             ContactRepository contactRepository,
-            TemplateService templateService,
-            OutboundMailService outboundMailService,
             ProjectService projectService,
+            ProjectAssetService projectAssetService,
+            ContactSendProcessor contactSendProcessor,
             TaskExecutor taskExecutor
     ) {
         this.contactRepository = contactRepository;
-        this.templateService = templateService;
-        this.outboundMailService = outboundMailService;
         this.projectService = projectService;
+        this.projectAssetService = projectAssetService;
+        this.contactSendProcessor = contactSendProcessor;
         this.taskExecutor = taskExecutor;
     }
 
     public void start(UUID projectId) {
+        requireActiveProject(projectId);
+        contactSendProcessor.recoverStuckInProgress(projectId);
         if (!running.compareAndSet(false, true)) {
             throw new IllegalStateException("Send process is already running");
         }
@@ -50,61 +47,38 @@ public class SendCoordinator {
     }
 
     public SendStatusResponse getStatus(UUID projectId) {
+        Project project = projectService.getProject(projectId);
+        contactSendProcessor.recoverStuckInProgress(projectId);
+        long newCount = contactRepository.countByProjectIdAndStatusAndDeletedAtIsNull(projectId, ContactStatus.NEW);
+        long eligibleBatchCount = cappedCount(newCount, project.getMaxMessagesPerBatch());
         return new SendStatusResponse(
                 running.get(),
                 "BATCH endpoint processes NEW contacts only; single-contact endpoint can also retry SEND_FAILED contacts",
-                contactRepository.countByProjectIdAndStatus(projectId, ContactStatus.NEW),
-                contactRepository.countByProjectIdAndStatus(projectId, ContactStatus.NEW),
-                contactRepository.countByProjectIdAndStatus(projectId, ContactStatus.SENT),
-                contactRepository.countByProjectIdAndStatus(projectId, ContactStatus.SEND_FAILED),
-                contactRepository.countByProjectIdAndStatus(projectId, ContactStatus.BOUNCED),
-                contactRepository.countByProjectIdAndStatus(projectId, ContactStatus.REPLIED)
+                newCount,
+                eligibleBatchCount,
+                contactRepository.countByProjectIdAndStatusAndDeletedAtIsNull(projectId, ContactStatus.SENT),
+                contactRepository.countByProjectIdAndStatusAndDeletedAtIsNull(projectId, ContactStatus.SEND_FAILED),
+                contactRepository.countByProjectIdAndStatusAndDeletedAtIsNull(projectId, ContactStatus.BOUNCED),
+                contactRepository.countByProjectIdAndStatusAndDeletedAtIsNull(projectId, ContactStatus.REPLIED)
         );
     }
 
     private void runSendLoop(UUID projectId) {
         try {
             Project project = projectService.getProject(projectId);
-            List<Contact> contacts = contactRepository.findByProjectIdAndStatusOrderByCreatedAtAsc(projectId, ContactStatus.NEW);
+            List<Contact> contacts = contactRepository.findByProjectIdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(projectId, ContactStatus.NEW);
+            Integer maxMessagesPerBatch = project.getMaxMessagesPerBatch();
+            if (maxMessagesPerBatch != null) {
+                contacts = contacts.stream()
+                        .limit(maxMessagesPerBatch)
+                        .toList();
+            }
             for (Contact contact : contacts) {
-                processContact(projectId, contact.getId());
+                contactSendProcessor.processContact(projectId, contact.getId(), false);
                 sleepDelay(project);
             }
         } finally {
             running.set(false);
-        }
-    }
-
-    @Transactional
-    public void processContact(UUID projectId, UUID contactId) {
-        Contact contact = contactRepository.findByProjectIdAndId(projectId, contactId)
-                .orElseThrow(() -> new IllegalArgumentException("Contact not found in project " + projectId + ": " + contactId));
-        if (contact.getStatus() != ContactStatus.NEW && contact.getStatus() != ContactStatus.SEND_FAILED) {
-            return;
-        }
-
-        contact.setStatus(ContactStatus.IN_PROGRESS);
-        contact.setLastErrorAt(null);
-        contact.setLastErrorMessage(null);
-        contactRepository.saveAndFlush(contact);
-
-        try {
-            String messageId = outboundMailService.send(
-                    contact,
-                    templateService.generateLetterPdf(contact.getProject(), contact.getContactName()),
-                    templateService.getPitchDeckResource(contact.getProject())
-            );
-            contact.setOutboundMessageId(messageId);
-            contact.setSentAt(OffsetDateTime.now());
-            contact.setStatus(ContactStatus.SENT);
-            contactRepository.save(contact);
-            log.info("Sent email to {} with messageId={}", contact.getEmail(), messageId);
-        } catch (Exception ex) {
-            contact.setStatus(ContactStatus.SEND_FAILED);
-            contact.setLastErrorAt(OffsetDateTime.now());
-            contact.setLastErrorMessage(ex.getMessage());
-            contactRepository.save(contact);
-            log.warn("Failed to send email to {}: {}", contact.getEmail(), ex.getMessage());
         }
     }
 
@@ -118,6 +92,37 @@ public class SendCoordinator {
     }
 
     public void sendSingle(UUID projectId, UUID contactId) {
-        processContact(projectId, contactId);
+        sendSingle(projectId, contactId, false);
+    }
+
+    public void sendSingle(UUID projectId, UUID contactId, boolean force) {
+        contactSendProcessor.processContact(projectId, contactId, force);
+    }
+
+    private long cappedCount(long count, Integer maxMessagesPerBatch) {
+        if (maxMessagesPerBatch == null) {
+            return count;
+        }
+        return Math.min(count, maxMessagesPerBatch);
+    }
+
+    private Project requireActiveProject(UUID projectId) {
+        Project project = projectService.getProject(projectId);
+        if (project.getStatus() != ProjectStatus.ACTIVE) {
+            throw new IllegalStateException("Only ACTIVE projects may send email");
+        }
+        if (project.getMailSubject() == null || project.getMailSubject().isBlank()) {
+            throw new IllegalStateException("Project email subject is required before sending");
+        }
+        if (project.getMailBody() == null || project.getMailBody().isBlank()) {
+            throw new IllegalStateException("Project email body is required before sending");
+        }
+        if (project.getGmailUsername() == null || project.getGmailUsername().isBlank()
+                || project.getGmailAppPassword() == null || project.getGmailAppPassword().isBlank()) {
+            throw new IllegalStateException("Project Gmail credentials are required before sending");
+        }
+        projectAssetService.activeLetter(projectId)
+                .orElseThrow(() -> new IllegalStateException("Project has no active letter template"));
+        return project;
     }
 }

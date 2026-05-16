@@ -29,29 +29,29 @@ public class Project {
     @Column(name = "status", nullable = false)
     private ProjectStatus status;
 
-    @Column(name = "letter_template", nullable = false)
+    @Column(name = "letter_template")
     private String letterTemplate;
 
-    @Column(name = "pitch_deck", nullable = false)
-    private String pitchDeck;
-
-    @Column(name = "mail_subject", nullable = false)
+    @Column(name = "mail_subject")
     private String mailSubject;
 
-    @Column(name = "mail_body", nullable = false)
+    @Column(name = "mail_body")
     private String mailBody;
 
-    @Column(name = "letter_attachment_filename", nullable = false)
+    @Column(name = "letter_attachment_filename")
     private String letterAttachmentFilename;
-
-    @Column(name = "pitch_deck_attachment_filename", nullable = false)
-    private String pitchDeckAttachmentFilename;
 
     @Column(name = "mail_from")
     private String mailFrom;
 
+    @Column(name = "mail_from_name")
+    private String mailFromName;
+
     @Column(name = "send_delay_ms", nullable = false)
     private long sendDelayMs;
+
+    @Column(name = "max_messages_per_batch")
+    private Integer maxMessagesPerBatch;
 
     @Column(name = "inbox_sync_cron", nullable = false)
     private String inboxSyncCron;
@@ -75,7 +75,7 @@ public class Project {
             id = UUID.randomUUID();
         }
         if (status == null) {
-            status = ProjectStatus.ACTIVE;
+            status = ProjectStatus.NEW;
         }
         createdAt = now;
         updatedAt = now;
@@ -126,14 +126,6 @@ public class Project {
         this.letterTemplate = letterTemplate;
     }
 
-    public String getPitchDeck() {
-        return pitchDeck;
-    }
-
-    public void setPitchDeck(String pitchDeck) {
-        this.pitchDeck = pitchDeck;
-    }
-
     public String getMailSubject() {
         return mailSubject;
     }
@@ -158,14 +150,6 @@ public class Project {
         this.letterAttachmentFilename = letterAttachmentFilename;
     }
 
-    public String getPitchDeckAttachmentFilename() {
-        return pitchDeckAttachmentFilename;
-    }
-
-    public void setPitchDeckAttachmentFilename(String pitchDeckAttachmentFilename) {
-        this.pitchDeckAttachmentFilename = pitchDeckAttachmentFilename;
-    }
-
     public String getMailFrom() {
         return mailFrom;
     }
@@ -174,12 +158,31 @@ public class Project {
         this.mailFrom = mailFrom;
     }
 
+    public String getMailFromName() {
+        return mailFromName;
+    }
+
+    public void setMailFromName(String mailFromName) {
+        this.mailFromName = mailFromName;
+    }
+
     public long getSendDelayMs() {
         return sendDelayMs;
     }
 
     public void setSendDelayMs(long sendDelayMs) {
         this.sendDelayMs = sendDelayMs;
+    }
+
+    public Integer getMaxMessagesPerBatch() {
+        return maxMessagesPerBatch;
+    }
+
+    public void setMaxMessagesPerBatch(Integer maxMessagesPerBatch) {
+        if (maxMessagesPerBatch != null && maxMessagesPerBatch < 1) {
+            throw new IllegalArgumentException("Max messages per batch must be at least 1");
+        }
+        this.maxMessagesPerBatch = maxMessagesPerBatch;
     }
 
     public String getInboxSyncCron() {

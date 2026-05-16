@@ -17,17 +17,17 @@ public class ProjectMapper {
         project.setDescription(request.description());
         project.setStatus(request.status());
         project.setLetterTemplate(request.letterTemplate());
-        project.setPitchDeck(request.pitchDeck());
         project.setMailSubject(request.mailSubject());
         project.setMailBody(request.mailBody());
         project.setLetterAttachmentFilename(request.letterAttachmentFilename());
-        project.setPitchDeckAttachmentFilename(request.pitchDeckAttachmentFilename());
         project.setMailFrom(request.mailFrom());
+        project.setMailFromName(request.mailFromName());
         if (request.sendDelayMs() != null) {
             project.setSendDelayMs(request.sendDelayMs());
         } else {
             project.setSendDelayMs(-1);
         }
+        project.setMaxMessagesPerBatch(request.maxMessagesPerBatch());
         project.setInboxSyncCron(request.inboxSyncCron());
         project.setGmailUsername(request.gmailUsername());
         project.setGmailAppPassword(request.gmailAppPassword());
@@ -40,13 +40,13 @@ public class ProjectMapper {
                 project.getDescription(),
                 project.getStatus(),
                 project.getLetterTemplate(),
-                project.getPitchDeck(),
                 project.getMailSubject(),
                 project.getMailBody(),
                 project.getLetterAttachmentFilename(),
-                project.getPitchDeckAttachmentFilename(),
                 project.getMailFrom(),
+                project.getMailFromName(),
                 project.getSendDelayMs(),
+                project.getMaxMessagesPerBatch(),
                 project.getInboxSyncCron(),
                 project.getGmailUsername(),
                 project.getGmailAppPassword() != null && !project.getGmailAppPassword().isBlank(),

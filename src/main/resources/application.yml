@@ -4,6 +4,10 @@ server:
 spring:
   application:
     name: ContactWork
+  servlet:
+    multipart:
+      max-file-size: 25MB
+      max-request-size: 30MB
   datasource:
     url: jdbc:postgresql://postgres:5432/contactwork
     username: ${SPRING_DATASOURCE_USERNAME}
@@ -23,17 +27,19 @@ spring:
 app:
   resources:
     letter-template: classpath:data/Letter.docx
-    pitch-deck: classpath:data/Pitch_deck_en.pdf
     working-dir: /tmp/contactwork/generated
   mail:
     subject: 'Partnership Opportunity: Preclinical Validation of Patented Nano-cartilage Tech'
     body: |-
       Please find attached a consortium proposal for EIC Pathfinder 2026 regarding preclinical validation of our patented Nano-cartilage technology. We are seeking a lead research partner for TRL 4/5 and have included a detailed letter and scientific pitch deck for your review.
     letter-attachment-filename: Consortium_Proposal.pdf
-    pitch-deck-attachment-filename: Pitch_deck_en.pdf
     from: ${APP_MAIL_FROM}
     send-delay-ms: 3000
     inbox-sync-cron: "0 */30 * * * *"
     gmail:
       username: ${GMAIL_USERNAME}
       app-password: ${GMAIL_APP_PASSWORD}
+      oauth:
+    client-id: ${GOOGLE_OAUTH_CLIENT_ID:}
+    client-secret: ${GOOGLE_OAUTH_CLIENT_SECRET:}
+    redirect-uri: ${GOOGLE_OAUTH_REDIRECT_URI:}

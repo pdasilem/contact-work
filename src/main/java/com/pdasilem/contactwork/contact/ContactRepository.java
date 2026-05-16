@@ -11,6 +11,6 @@ public interface ContactRepository extends JpaRepository<Contact, UUID>, JpaSpec
     Optional<Contact> findByProjectIdAndId(UUID projectId, UUID id);
     Optional<Contact> findByProjectIdAndEmail(UUID projectId, String email);
     Optional<Contact> findByProjectIdAndOutboundMessageId(UUID projectId, String outboundMessageId);
-    List<Contact> findByProjectIdAndStatusOrderByCreatedAtAsc(UUID projectId, ContactStatus status);
-    long countByProjectIdAndStatus(UUID projectId, ContactStatus status);
+    List<Contact> findByProjectIdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(UUID projectId, ContactStatus status);
+    long countByProjectIdAndStatusAndDeletedAtIsNull(UUID projectId, ContactStatus status);
 }

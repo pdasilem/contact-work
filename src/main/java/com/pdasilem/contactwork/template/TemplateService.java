@@ -34,11 +34,14 @@ public class TemplateService {
     }
 
     public GeneratedLetter generateLetterPdf(Project project, String contactName) {
+        return generateLetterPdf(project, resourceLoader.getResource(project.getLetterTemplate()), contactName);
+    }
+
+    public GeneratedLetter generateLetterPdf(Project project, Resource templateResource, String contactName) {
         try {
             Path workingDir = Files.createDirectories(Path.of(appProperties.resources().workingDir()));
             Path jobDir = Files.createTempDirectory(workingDir, "letter-");
             Path docxPath = jobDir.resolve("letter.docx");
-            Resource templateResource = resourceLoader.getResource(project.getLetterTemplate());
             try (InputStream inputStream = templateResource.getInputStream();
                  XWPFDocument document = new XWPFDocument(inputStream)) {
                 replaceInDocument(document, contactName);
@@ -52,10 +55,6 @@ public class TemplateService {
         } catch (IOException ex) {
             throw new IllegalStateException("Failed to generate letter PDF", ex);
         }
-    }
-
-    public Resource getPitchDeckResource(Project project) {
-        return resourceLoader.getResource(project.getPitchDeck());
     }
 
     private void replaceInDocument(XWPFDocument document, String contactName) {

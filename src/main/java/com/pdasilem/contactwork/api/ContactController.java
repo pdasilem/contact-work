@@ -12,6 +12,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -76,16 +77,22 @@ public class ContactController {
         return contactMapper.toResponse(contactService.save(contact));
     }
 
+    @DeleteMapping("/projects/{projectId}/contacts/{selector}")
+    public ResponseEntity<Void> deleteProjectContact(@PathVariable UUID projectId, @PathVariable String selector) {
+        var contact = contactLookupService.findBySelector(projectId, selector);
+        contactService.deleteContact(projectId, contact.getId());
+        return ResponseEntity.noContent().build();
+    }
+
     private String formatAsTable(List<ContactResponse> contacts) {
         StringBuilder builder = new StringBuilder();
         String header = String.format(
-                "%-36s  %-10s  %-24s  %-32s  %-24s  %-7s  %-20s%n",
+                "%-36s  %-10s  %-24s  %-32s  %-24s  %-20s%n",
                 "ID",
                 "STATUS",
                 "CONTACT",
                 "EMAIL",
                 "ORGANIZATION",
-                "COUNTRY",
                 "SENT AT"
         );
         builder.append(header);
@@ -93,13 +100,12 @@ public class ContactController {
 
         for (ContactResponse contact : contacts) {
             builder.append(String.format(
-                    "%-36s  %-10s  %-24s  %-32s  %-24s  %-7s  %-20s%n",
+                    "%-36s  %-10s  %-24s  %-32s  %-24s  %-20s%n",
                     truncate(contact.id().toString(), 36),
                     truncate(contact.status().name(), 10),
                     truncate(contact.contactName(), 24),
                     truncate(contact.email(), 32),
                     truncate(contact.organizationName(), 24),
-                    truncate(contact.country(), 7),
                     truncate(Objects.toString(contact.sentAt(), ""), 20)
             ));
         }

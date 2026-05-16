@@ -2,6 +2,7 @@ package com.pdasilem.contactwork.api;
 
 import com.pdasilem.contactwork.contact.Contact;
 import com.pdasilem.contactwork.contact.ContactLookupService;
+import com.pdasilem.contactwork.project.asset.ProjectAssetService;
 import com.pdasilem.contactwork.template.GeneratedLetter;
 import com.pdasilem.contactwork.template.TemplateService;
 import java.io.IOException;
@@ -22,16 +23,29 @@ public class LetterPreviewController {
 
     private final ContactLookupService contactLookupService;
     private final TemplateService templateService;
+    private final ProjectAssetService projectAssetService;
 
-    public LetterPreviewController(ContactLookupService contactLookupService, TemplateService templateService) {
+    public LetterPreviewController(
+            ContactLookupService contactLookupService,
+            TemplateService templateService,
+            ProjectAssetService projectAssetService
+    ) {
         this.contactLookupService = contactLookupService;
         this.templateService = templateService;
+        this.projectAssetService = projectAssetService;
     }
 
-    @GetMapping("/projects/{projectId}/letters/{selector}/pdf")
+    @GetMapping({
+            "/projects/{projectId}/letters/{selector}/pdf",
+            "/projects/{projectId}/contacts/{selector}/letter/pdf"
+    })
     public ResponseEntity<byte[]> generateProjectPdf(@PathVariable UUID projectId, @PathVariable String selector) throws IOException {
         Contact contact = contactLookupService.findBySelector(projectId, selector);
-        GeneratedLetter generatedLetter = templateService.generateLetterPdf(contact.getProject(), contact.getContactName());
+        GeneratedLetter generatedLetter = templateService.generateLetterPdf(
+                contact.getProject(),
+                projectAssetService.activeLetterResource(projectId),
+                contact.getContactName()
+        );
         try {
             byte[] pdfBytes = Files.readAllBytes(generatedLetter.pdfPath());
             return ResponseEntity.ok()

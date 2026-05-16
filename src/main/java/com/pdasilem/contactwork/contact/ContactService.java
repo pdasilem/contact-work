@@ -1,25 +1,40 @@
 package com.pdasilem.contactwork.contact;
 
 import jakarta.persistence.criteria.Predicate;
+import com.pdasilem.contactwork.common.EmailUtils;
+import com.pdasilem.contactwork.history.ContactMessageRepository;
+import com.pdasilem.contactwork.project.Project;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ContactService {
 
     private final ContactRepository contactRepository;
+    private final ContactMessageRepository contactMessageRepository;
+    private final ContactCustomFieldRepository contactCustomFieldRepository;
 
-    public ContactService(ContactRepository contactRepository) {
+    public ContactService(
+            ContactRepository contactRepository,
+            ContactMessageRepository contactMessageRepository,
+            ContactCustomFieldRepository contactCustomFieldRepository
+    ) {
         this.contactRepository = contactRepository;
+        this.contactMessageRepository = contactMessageRepository;
+        this.contactCustomFieldRepository = contactCustomFieldRepository;
     }
 
     public List<Contact> findContacts(UUID projectId, ContactStatus status, String email, String organization) {
         Specification<Contact> specification = (root, query, criteriaBuilder) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(criteriaBuilder.equal(root.get("project").get("id"), projectId));
+            predicates.add(criteriaBuilder.isNull(root.get("deletedAt")));
             if (status != null) {
                 predicates.add(criteriaBuilder.equal(root.get("status"), status));
             }
@@ -38,6 +53,7 @@ public class ContactService {
         Specification<Contact> specification = (root, query, criteriaBuilder) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(criteriaBuilder.equal(root.get("project").get("id"), projectId));
+            predicates.add(criteriaBuilder.isNull(root.get("deletedAt")));
             if (search != null && !search.isBlank()) {
                 String pattern = "%" + search.toLowerCase() + "%";
                 predicates.add(criteriaBuilder.or(
@@ -60,12 +76,119 @@ public class ContactService {
         return contactRepository.save(contact);
     }
 
+    @Transactional
+    public Contact createContact(
+            Project project,
+            String organizationName,
+            String contactName,
+            String email,
+            String note,
+            Map<String, String> customFields
+    ) {
+        String normalizedEmail = requiredEmail(email);
+        if (contactRepository.existsByProjectIdAndEmail(project.getId(), normalizedEmail)) {
+            throw new IllegalArgumentException("Contact already exists for email " + normalizedEmail);
+        }
+        Contact contact = new Contact();
+        contact.setId(UUID.randomUUID());
+        contact.setProject(project);
+        contact.setOrganizationName(requiredValue(organizationName, "Organization"));
+        contact.setContactName(blankToEmpty(contactName));
+        contact.setEmail(normalizedEmail);
+        contact.setNote(trimToNull(note));
+        contact.setStatus(ContactStatus.NEW);
+        Contact saved = contactRepository.save(contact);
+        saveCustomFields(project, saved, customFields);
+        return saved;
+    }
+
+    @Transactional
+    public Contact updateEditableFields(UUID projectId, UUID contactId, String contactName, String email, String note) {
+        Contact contact = getContact(projectId, contactId);
+        String normalizedEmail = requiredEmail(email);
+        contactRepository.findByProjectIdAndEmail(projectId, normalizedEmail)
+                .filter(existing -> !existing.getId().equals(contactId))
+                .ifPresent(existing -> {
+                    throw new IllegalArgumentException("Contact already exists for email " + normalizedEmail);
+                });
+        contact.setContactName(blankToEmpty(contactName));
+        contact.setEmail(normalizedEmail);
+        contact.setNote(trimToNull(note));
+        return contactRepository.save(contact);
+    }
+
     public Contact findByEmail(UUID projectId, String email) {
         return contactRepository.findByProjectIdAndEmail(projectId, email)
                 .orElseThrow(() -> new IllegalArgumentException("Contact not found by email in project " + projectId + ": " + email));
     }
 
     public long countByStatus(UUID projectId, ContactStatus status) {
-        return contactRepository.countByProjectIdAndStatus(projectId, status);
+        return contactRepository.countByProjectIdAndStatusAndDeletedAtIsNull(projectId, status);
+    }
+
+    public List<ContactCustomField> findCustomFields(UUID projectId, UUID contactId) {
+        return contactCustomFieldRepository.findByProjectIdAndContactId(projectId, contactId);
+    }
+
+    @Transactional
+    public void deleteContact(UUID projectId, UUID contactId) {
+        Contact contact = getContact(projectId, contactId);
+        boolean hasHistory = contact.getSentAt() != null
+                || contact.getOutboundMessageId() != null
+                || !contactMessageRepository.findByProjectIdAndContactIdOrderByMessageTimestampAsc(projectId, contactId).isEmpty();
+        if (hasHistory) {
+            contact.setDeletedAt(OffsetDateTime.now());
+            contactRepository.save(contact);
+        } else {
+            contactRepository.delete(contact);
+        }
+    }
+
+    private void saveCustomFields(Project project, Contact contact, Map<String, String> customFields) {
+        if (customFields == null || customFields.isEmpty()) {
+            return;
+        }
+        customFields.forEach((key, value) -> {
+            String fieldValue = trimToNull(value);
+            if (fieldValue == null) {
+                return;
+            }
+            ContactCustomField field = new ContactCustomField();
+            field.setId(UUID.randomUUID());
+            field.setProject(project);
+            field.setContact(contact);
+            field.setFieldKey(key);
+            field.setFieldValue(fieldValue);
+            contactCustomFieldRepository.save(field);
+        });
+    }
+
+    private String requiredEmail(String email) {
+        String normalizedEmail = EmailUtils.normalize(email);
+        if (normalizedEmail == null || normalizedEmail.isBlank()) {
+            throw new IllegalArgumentException("Email is required");
+        }
+        return normalizedEmail;
+    }
+
+    private String requiredValue(String value, String label) {
+        String trimmed = trimToNull(value);
+        if (trimmed == null) {
+            throw new IllegalArgumentException(label + " is required");
+        }
+        return trimmed;
+    }
+
+    private String blankToEmpty(String value) {
+        String trimmed = trimToNull(value);
+        return trimmed == null ? "" : trimmed;
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

@@ -29,17 +29,11 @@ public class Contact {
     @Column(name = "organization_name", nullable = false)
     private String organizationName;
 
-    @Column(name = "country")
-    private String country;
-
     @Column(name = "contact_name", nullable = false)
     private String contactName;
 
     @Column(name = "email", nullable = false)
     private String email;
-
-    @Column(name = "preclinical_notes")
-    private String preclinicalNotes;
 
     @Column(name = "note")
     private String note;
@@ -65,6 +59,9 @@ public class Contact {
 
     @Column(name = "last_error_message")
     private String lastErrorMessage;
+
+    @Column(name = "deleted_at")
+    private OffsetDateTime deletedAt;
 
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
@@ -108,14 +105,6 @@ public class Contact {
         this.organizationName = organizationName;
     }
 
-    public String getCountry() {
-        return country;
-    }
-
-    public void setCountry(String country) {
-        this.country = country;
-    }
-
     public String getContactName() {
         return contactName;
     }
@@ -130,14 +119,6 @@ public class Contact {
 
     public void setEmail(String email) {
         this.email = email;
-    }
-
-    public String getPreclinicalNotes() {
-        return preclinicalNotes;
-    }
-
-    public void setPreclinicalNotes(String preclinicalNotes) {
-        this.preclinicalNotes = preclinicalNotes;
     }
 
     public String getNote() {
@@ -202,6 +183,14 @@ public class Contact {
 
     public void setLastErrorMessage(String lastErrorMessage) {
         this.lastErrorMessage = lastErrorMessage;
+    }
+
+    public OffsetDateTime getDeletedAt() {
+        return deletedAt;
+    }
+
+    public void setDeletedAt(OffsetDateTime deletedAt) {
+        this.deletedAt = deletedAt;
     }
 
     public OffsetDateTime getCreatedAt() {

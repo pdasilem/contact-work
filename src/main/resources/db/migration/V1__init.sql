@@ -1,25 +1,48 @@
+create table projects (
+    id uuid primary key,
+    name text not null,
+    description text,
+    status varchar(32) not null,
+    letter_template text,
+    mail_subject text,
+    mail_body text,
+    letter_attachment_filename text,
+    mail_from text,
+    mail_from_name text,
+    send_delay_ms bigint not null,
+    max_messages_per_batch integer,
+    inbox_sync_cron text not null,
+    gmail_username text,
+    gmail_app_password text,
+    created_at timestamptz not null,
+    updated_at timestamptz not null
+);
+
 create table contacts (
     id uuid primary key,
+    project_id uuid not null,
     organization_name text not null,
-    country text,
     contact_name text not null,
-    email text not null unique,
-    preclinical_notes text,
+    email text not null,
     note text,
     status varchar(32) not null,
-    outbound_message_id text unique,
+    outbound_message_id text,
     sent_at timestamptz,
     reply_received_at timestamptz,
     bounce_received_at timestamptz,
     last_error_at timestamptz,
     last_error_message text,
+    deleted_at timestamptz,
     created_at timestamptz not null,
-    updated_at timestamptz not null
+    updated_at timestamptz not null,
+    constraint fk_contacts_project
+        foreign key (project_id) references projects(id) on delete cascade
 );
 
 create table contact_messages (
     id uuid primary key,
-    contact_id uuid not null references contacts(id) on delete cascade,
+    project_id uuid not null,
+    contact_id uuid not null,
     direction varchar(16) not null,
     event_type varchar(16) not null,
     message_id text,
@@ -29,23 +52,89 @@ create table contact_messages (
     subject text,
     body_text text,
     message_timestamp timestamptz not null,
-    created_at timestamptz not null
+    created_at timestamptz not null,
+    constraint fk_contact_messages_project
+        foreign key (project_id) references projects(id) on delete cascade,
+    constraint fk_contact_messages_contact
+        foreign key (contact_id) references contacts(id) on delete cascade
 );
 
 create table mail_sync_state (
-    id smallint primary key,
+    project_id uuid primary key,
     last_processed_uid bigint not null,
-    updated_at timestamptz not null
+    updated_at timestamptz not null,
+    constraint fk_mail_sync_state_project
+        foreign key (project_id) references projects(id) on delete cascade
 );
 
-insert into mail_sync_state (id, last_processed_uid, updated_at)
-values (1, 0, now())
-on conflict (id) do nothing;
+create table project_assets (
+    id uuid primary key,
+    project_id uuid not null,
+    type varchar(32) not null,
+    original_filename text not null,
+    stored_path text not null,
+    content_type text,
+    size_bytes bigint not null,
+    active boolean not null,
+    created_at timestamptz not null,
+    updated_at timestamptz not null,
+    constraint fk_project_assets_project
+        foreign key (project_id) references projects(id) on delete cascade
+);
 
-create index idx_contacts_status on contacts(status);
-create index idx_contacts_sent_at on contacts(sent_at);
+create table contact_custom_fields (
+    id uuid primary key,
+    project_id uuid not null,
+    contact_id uuid not null,
+    field_key text not null,
+    field_value text,
+    constraint fk_contact_custom_fields_project
+        foreign key (project_id) references projects(id) on delete cascade,
+    constraint fk_contact_custom_fields_contact
+        foreign key (contact_id) references contacts(id) on delete cascade,
+    constraint uq_contact_custom_fields_contact_key
+        unique (contact_id, field_key)
+);
+
+create table project_contact_columns (
+    id uuid primary key,
+    project_id uuid not null,
+    column_key text not null,
+    display_label text not null,
+    source_type varchar(16) not null,
+    column_order integer not null,
+    visible boolean not null,
+    constraint fk_project_contact_columns_project
+        foreign key (project_id) references projects(id) on delete cascade,
+    constraint uq_project_contact_columns_project_key
+        unique (project_id, column_key)
+);
+
+create unique index uq_contacts_project_email
+    on contacts(project_id, email);
+
+create unique index uq_contacts_project_outbound_message_id
+    on contacts(project_id, outbound_message_id)
+    where outbound_message_id is not null;
+
+create index idx_contacts_project_status
+    on contacts(project_id, status);
+
+create index idx_contacts_project_deleted
+    on contacts(project_id, deleted_at);
+
 create unique index uq_contact_messages_message_id
     on contact_messages(message_id)
     where message_id is not null;
-create index idx_contact_messages_contact_id_message_timestamp
-    on contact_messages(contact_id, message_timestamp desc);
+
+create index idx_contact_messages_project_contact_timestamp
+    on contact_messages(project_id, contact_id, message_timestamp desc);
+
+create index idx_project_assets_project_type_active_created
+    on project_assets(project_id, type, active, created_at);
+
+create index idx_contact_custom_fields_project_contact
+    on contact_custom_fields(project_id, contact_id);
+
+create index idx_project_contact_columns_project_order
+    on project_contact_columns(project_id, column_order);

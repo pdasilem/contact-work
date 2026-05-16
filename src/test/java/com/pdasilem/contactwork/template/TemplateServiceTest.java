@@ -28,14 +28,12 @@ class TemplateServiceTest {
         AppProperties properties = new AppProperties(
                 new AppProperties.Resources(
                         "classpath:data/Letter.docx",
-                        "classpath:data/Pitch_deck_en.pdf",
                         tempDir.toString()
                 ),
                 new AppProperties.Mail(
                         "Test Subject",
                         "Test body",
                         "letter.pdf",
-                        "Pitch_deck_en.pdf",
                         "sender@example.com",
                         0,
                         "0 */5 * * * *",
@@ -45,7 +43,6 @@ class TemplateServiceTest {
 
         Project project = new Project();
         project.setLetterTemplate("classpath:data/Letter.docx");
-        project.setPitchDeck("classpath:data/Pitch_deck_en.pdf");
         TemplateService service = new TemplateService(properties, new DefaultResourceLoader(), pdfConversionService);
         GeneratedLetter generatedLetter = service.generateLetterPdf(project, "Alice Example");
 

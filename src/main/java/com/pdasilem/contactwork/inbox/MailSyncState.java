@@ -6,20 +6,27 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.MapsId;
 import jakarta.persistence.OneToOne;
+import jakarta.persistence.PostLoad;
+import jakarta.persistence.PostPersist;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import com.pdasilem.contactwork.project.Project;
 import java.time.OffsetDateTime;
 import java.util.UUID;
+import org.springframework.data.domain.Persistable;
 
 @Entity
 @Table(name = "mail_sync_state")
-public class MailSyncState {
+public class MailSyncState implements Persistable<UUID> {
 
     @Id
     @Column(name = "project_id")
     private UUID projectId;
+
+    @Transient
+    private boolean isNew = true;
 
     @OneToOne
     @MapsId
@@ -36,6 +43,22 @@ public class MailSyncState {
     @PreUpdate
     void onSave() {
         updatedAt = OffsetDateTime.now();
+    }
+
+    @PostPersist
+    @PostLoad
+    void markNotNew() {
+        isNew = false;
+    }
+
+    @Override
+    public UUID getId() {
+        return projectId;
+    }
+
+    @Override
+    public boolean isNew() {
+        return isNew;
     }
 
     public UUID getProjectId() {

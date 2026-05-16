@@ -14,7 +14,6 @@ public record AppProperties(
 
     public record Resources(
             @NotBlank String letterTemplate,
-            @NotBlank String pitchDeck,
             @NotBlank String workingDir
     ) {
     }
@@ -23,7 +22,6 @@ public record AppProperties(
             @NotBlank String subject,
             @NotBlank String body,
             @NotBlank String letterAttachmentFilename,
-            @NotBlank String pitchDeckAttachmentFilename,
             String from,
             long sendDelayMs,
             @NotBlank String inboxSyncCron,
@@ -33,7 +31,24 @@ public record AppProperties(
 
     public record Gmail(
             String username,
-            String appPassword
+            String appPassword,
+            OAuth oauth
+    ) {
+        public Gmail(String username, String appPassword) {
+            this(username, appPassword, new OAuth(null, null, null));
+        }
+
+        public Gmail {
+            if (oauth == null) {
+                oauth = new OAuth(null, null, null);
+            }
+        }
+    }
+
+    public record OAuth(
+            String clientId,
+            String clientSecret,
+            String redirectUri
     ) {
     }
 }

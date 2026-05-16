@@ -4,14 +4,16 @@ import com.pdasilem.contactwork.config.AppProperties;
 import com.pdasilem.contactwork.contact.Contact;
 import com.pdasilem.contactwork.history.ContactMessageService;
 import com.pdasilem.contactwork.project.Project;
+import com.pdasilem.contactwork.project.asset.MailAttachment;
 import com.pdasilem.contactwork.template.GeneratedLetter;
 import jakarta.mail.MessagingException;
+import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeMessage;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Properties;
-import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -42,27 +44,33 @@ public class OutboundMailService {
         this.testMailSender = testMailSender;
     }
 
-    public String send(Contact contact, GeneratedLetter generatedLetter, Resource pitchDeck) {
-        Project project = contact.getProject();
+    public String send(Project project, Contact contact, GeneratedLetter generatedLetter, List<MailAttachment> attachments) {
         try {
             JavaMailSender javaMailSender = testMailSender != null ? testMailSender : createSender(project);
             MimeMessage mimeMessage = javaMailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
             helper.setTo(contact.getEmail());
             if (project.getMailFrom() != null && !project.getMailFrom().isBlank()) {
-                helper.setFrom(project.getMailFrom());
+                if (project.getMailFromName() != null && !project.getMailFromName().isBlank()) {
+                    helper.setFrom(new InternetAddress(project.getMailFrom(), project.getMailFromName(), "UTF-8"));
+                } else {
+                    helper.setFrom(project.getMailFrom());
+                }
             }
             helper.setSubject(project.getMailSubject());
             helper.setText(project.getMailBody(), false);
             helper.addAttachment(
-                    project.getLetterAttachmentFilename(),
+                    letterAttachmentName(project),
                     new UrlResource(generatedLetter.pdfPath().toUri())
             );
-            helper.addAttachment(project.getPitchDeckAttachmentFilename(), pitchDeck);
+            for (MailAttachment attachment : attachments) {
+                helper.addAttachment(attachment.filename(), attachment.resource());
+            }
             mimeMessage.saveChanges();
             String messageId = mimeMessage.getMessageID();
             javaMailSender.send(mimeMessage);
             contactMessageService.recordOutbound(
+                    project,
                     contact,
                     messageId,
                     project.getMailSubject(),
@@ -79,6 +87,13 @@ public class OutboundMailService {
             deleteSilently(generatedLetter.pdfPath());
             deleteSilently(generatedLetter.docxPath().getParent());
         }
+    }
+
+    private String letterAttachmentName(Project project) {
+        if (project.getLetterAttachmentFilename() == null || project.getLetterAttachmentFilename().isBlank()) {
+            return "letter.pdf";
+        }
+        return project.getLetterAttachmentFilename();
     }
 
     public void verifySmtp(Project project) {
