@@ -34,6 +34,23 @@ public class ContactService {
         return contactRepository.findAll(specification);
     }
 
+    public List<Contact> searchContacts(UUID projectId, String search) {
+        Specification<Contact> specification = (root, query, criteriaBuilder) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(criteriaBuilder.equal(root.get("project").get("id"), projectId));
+            if (search != null && !search.isBlank()) {
+                String pattern = "%" + search.toLowerCase() + "%";
+                predicates.add(criteriaBuilder.or(
+                        criteriaBuilder.like(criteriaBuilder.lower(root.get("email")), pattern),
+                        criteriaBuilder.like(criteriaBuilder.lower(root.get("organizationName")), pattern),
+                        criteriaBuilder.like(criteriaBuilder.lower(root.get("contactName")), pattern)
+                ));
+            }
+            return criteriaBuilder.and(predicates.toArray(Predicate[]::new));
+        };
+        return contactRepository.findAll(specification);
+    }
+
     public Contact getContact(UUID projectId, UUID id) {
         return contactRepository.findByProjectIdAndId(projectId, id)
                 .orElseThrow(() -> new IllegalArgumentException("Contact not found in project " + projectId + ": " + id));

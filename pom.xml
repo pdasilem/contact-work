@@ -5,27 +5,15 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.5.13</version>
+        <version>3.5.14</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>com.pdasilem</groupId>
     <artifactId>contact-work</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>ContactWork</name>
-    <description>ContactWork</description>
-    <url/>
-    <licenses>
-        <license/>
-    </licenses>
-    <developers>
-        <developer/>
-    </developers>
-    <scm>
-        <connection/>
-        <developerConnection/>
-        <tag/>
-        <url/>
-    </scm>
+    <description>Contacts Work</description>
+
     <properties>
         <java.version>25</java.version>
         <apache.poi.version>5.5.1</apache.poi.version>

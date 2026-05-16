@@ -44,6 +44,15 @@ public class ContactImportService {
         if (file.isEmpty()) {
             throw new IllegalArgumentException("CSV file is empty");
         }
+        try {
+            return importContacts(projectId, file.getOriginalFilename(), file.getInputStream());
+        } catch (IOException ex) {
+            throw new IllegalArgumentException("Failed to read CSV file", ex);
+        }
+    }
+
+    @Transactional
+    public ImportContactsResponse importContacts(UUID projectId, String filename, InputStream fileContent) {
         Project project = projectService.getProject(projectId);
 
         int totalRows = 0;
@@ -51,7 +60,7 @@ public class ContactImportService {
         int skippedExisting = 0;
         int skippedInvalid = 0;
 
-        try (InputStream inputStream = stripBom(file.getInputStream())) {
+        try (InputStream inputStream = stripBom(fileContent)) {
             CsvSchema schema = CsvSchema.emptySchema();
             MappingIterator<String[]> iterator = csvMapper
                     .readerFor(String[].class)
@@ -101,7 +110,7 @@ public class ContactImportService {
         }
 
         log.info("Imported contacts from {}: totalRows={}, inserted={}, skippedExisting={}, skippedInvalid={}",
-                file.getOriginalFilename(), totalRows, inserted, skippedExisting, skippedInvalid);
+                filename, totalRows, inserted, skippedExisting, skippedInvalid);
         return new ImportContactsResponse(totalRows, inserted, skippedExisting, skippedInvalid);
     }
 
