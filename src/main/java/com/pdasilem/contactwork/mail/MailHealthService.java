@@ -11,30 +11,29 @@ public class MailHealthService {
 
     private final InboxSyncService inboxSyncService;
     private final OutboundMailService outboundMailService;
-    private final GmailAliasService gmailAliasService;
     private final ProjectService projectService;
 
     public MailHealthService(
             InboxSyncService inboxSyncService,
             OutboundMailService outboundMailService,
-            GmailAliasService gmailAliasService,
             ProjectService projectService
     ) {
         this.inboxSyncService = inboxSyncService;
         this.outboundMailService = outboundMailService;
-        this.gmailAliasService = gmailAliasService;
         this.projectService = projectService;
     }
 
     public void verifyConnections(UUID projectId) {
         var project = projectService.getProject(projectId);
+        requireProjectGmailCredentials(project);
         outboundMailService.verifySmtp(project);
         inboxSyncService.verifyConnections(projectId);
     }
 
-    public Project verifyConnectionsAndSyncAlias(UUID projectId) {
-        verifyConnections(projectId);
-        gmailAliasService.syncDefaultAlias(projectId);
-        return projectService.getProject(projectId);
+    private void requireProjectGmailCredentials(Project project) {
+        if (project.getGmailUsername() == null || project.getGmailUsername().isBlank()
+                || project.getGmailAppPassword() == null || project.getGmailAppPassword().isBlank()) {
+            throw new IllegalStateException("Project Gmail credentials are required before checking mailbox");
+        }
     }
 }

@@ -27,18 +27,10 @@ class TemplateServiceTest {
 
         AppProperties properties = new AppProperties(
                 new AppProperties.Resources(
-                        "classpath:data/Letter.docx",
                         tempDir.toString()
                 ),
-                new AppProperties.Mail(
-                        "Test Subject",
-                        "Test body",
-                        "letter.pdf",
-                        "sender@example.com",
-                        0,
-                        "0 */5 * * * *",
-                        new AppProperties.Gmail("user@example.com", "app-password")
-                )
+                new AppProperties.Mail(0, "0 */5 * * * *", null),
+                null
         );
 
         Project project = new Project();

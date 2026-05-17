@@ -210,6 +210,78 @@
   color: #93370d;
 }
 
+.cw-ai-section {
+  display: grid;
+  gap: 12px;
+}
+
+.cw-chat-history,
+.cw-conversation-list,
+.cw-summary-box {
+  display: grid;
+  gap: 8px;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid #e4e7ec;
+  border-radius: 6px;
+  padding: 10px;
+  background: #fcfcfd;
+}
+
+.cw-chat-message,
+.cw-conversation-message {
+  display: grid;
+  gap: 4px;
+  border-bottom: 1px solid #edf0f5;
+  padding-bottom: 8px;
+  white-space: pre-wrap;
+}
+
+.cw-chat-message:last-child,
+.cw-conversation-message:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.cw-chat-message.user span:first-child {
+  color: #175cd3;
+  font-weight: 700;
+}
+
+.cw-chat-message.assistant span:first-child {
+  color: #067647;
+  font-weight: 700;
+}
+
+.cw-conversation-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.cw-conversation-header,
+.cw-setup-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.cw-setup-summary-title {
+  display: grid;
+  gap: 2px;
+  min-width: min(420px, 100%);
+}
+
+.cw-setup-summary-title h3 {
+  margin: 0;
+}
+
+.cw-setup-body {
+  display: grid;
+  gap: 14px;
+  padding-top: 14px;
+}
+
 @media (max-width: 760px) {
   .cw-shell {
     grid-template-columns: 220px minmax(0, 1fr);

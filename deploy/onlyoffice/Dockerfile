@@ -8,6 +8,6 @@ RUN apt-get update \
         fonts-noto-core \
     && rm -rf /var/lib/apt/lists/*
 
-COPY deploy/onlyoffice/fonts-local.conf /etc/fonts/local.conf
+COPY fonts-local.conf /etc/fonts/local.conf
 
 RUN fc-cache -f -v

@@ -62,6 +62,12 @@ public class Project {
     @Column(name = "gmail_app_password")
     private String gmailAppPassword;
 
+    @Column(name = "ai_system_prompt")
+    private String aiSystemPrompt;
+
+    @Column(name = "last_mail_sync_at")
+    private OffsetDateTime lastMailSyncAt;
+
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
 
@@ -207,6 +213,22 @@ public class Project {
 
     public void setGmailAppPassword(String gmailAppPassword) {
         this.gmailAppPassword = gmailAppPassword;
+    }
+
+    public String getAiSystemPrompt() {
+        return aiSystemPrompt;
+    }
+
+    public void setAiSystemPrompt(String aiSystemPrompt) {
+        this.aiSystemPrompt = aiSystemPrompt;
+    }
+
+    public OffsetDateTime getLastMailSyncAt() {
+        return lastMailSyncAt;
+    }
+
+    public void setLastMailSyncAt(OffsetDateTime lastMailSyncAt) {
+        this.lastMailSyncAt = lastMailSyncAt;
     }
 
     public OffsetDateTime getCreatedAt() {

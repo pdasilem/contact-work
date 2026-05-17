@@ -1,6 +1,7 @@
 package com.pdasilem.contactwork.project;
 
 import com.pdasilem.contactwork.config.AppProperties;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -8,11 +9,16 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ProjectService {
-
+    public static final String DEFAULT_AI_SYSTEM_PROMPT = """
+            You are ContactWork AI, a read-only assistant for email outreach operations. You help users understand projects, contacts, mailbox history, replies, bounces, send failures, readiness, summaries, and next operational actions. Use available project, contact, mailbox, and saved summary data as the source of truth. Do not invent facts, counts, contacts, messages, credentials, or external claims. Never send emails, mutate contacts, change statuses, edit projects, or store credentials. If data is missing, say what is missing and what should be configured or synced next. Answer in the same language the user used. Keep answers concise, practical, and explicit about uncertainty.
+            """.trim();
     private final ProjectRepository projectRepository;
     private final AppProperties appProperties;
 
-    public ProjectService(ProjectRepository projectRepository, AppProperties appProperties) {
+    public ProjectService(
+            ProjectRepository projectRepository,
+            AppProperties appProperties
+    ) {
         this.projectRepository = projectRepository;
         this.appProperties = appProperties;
     }
@@ -76,16 +82,47 @@ public class ProjectService {
         return projectRepository.save(project);
     }
 
+    @Transactional
+    public Project markMailSynced(UUID projectId, OffsetDateTime syncedAt) {
+        Project project = getProject(projectId);
+        project.setLastMailSyncAt(syncedAt);
+        return projectRepository.save(project);
+    }
+
+    @Transactional
+    public Project updateAiSystemPrompt(UUID projectId, String aiSystemPrompt) {
+        Project project = getProject(projectId);
+        project.setAiSystemPrompt(resolveAiSystemPrompt(aiSystemPrompt));
+        return projectRepository.save(project);
+    }
+
+    @Transactional
+    public Project resetAiSystemPrompt(UUID projectId) {
+        return updateAiSystemPrompt(projectId, DEFAULT_AI_SYSTEM_PROMPT);
+    }
+
+    public String aiSystemPrompt(Project project) {
+        return resolveAiSystemPrompt(project == null ? null : project.getAiSystemPrompt());
+    }
+
     private void applyDefaults(Project project) {
         if (project.getStatus() == null) {
             project.setStatus(ProjectStatus.NEW);
         }
-        if (project.getSendDelayMs() < 0) {
+        if (project.getSendDelayMs() <= 0) {
             project.setSendDelayMs(appProperties.mail().sendDelayMs());
         }
         if (project.getInboxSyncCron() == null) {
             project.setInboxSyncCron(appProperties.mail().inboxSyncCron());
         }
+        project.setAiSystemPrompt(resolveAiSystemPrompt(project.getAiSystemPrompt()));
+    }
+
+    private String resolveAiSystemPrompt(String aiSystemPrompt) {
+        if (aiSystemPrompt == null || aiSystemPrompt.isBlank()) {
+            return DEFAULT_AI_SYSTEM_PROMPT;
+        }
+        return aiSystemPrompt.trim();
     }
 
 }

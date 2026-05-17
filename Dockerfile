@@ -1,10 +1,12 @@
+# syntax=docker/dockerfile:1.7
+
 FROM eclipse-temurin:25-jdk AS build
 WORKDIR /workspace
 COPY .mvn/ .mvn/
 COPY mvnw pom.xml ./
 RUN chmod +x mvnw
 COPY src ./src
-RUN ./mvnw -q -Pproduction -DskipTests package
+RUN --mount=type=cache,target=/root/.m2 ./mvnw -q -Pproduction -DskipTests package
 
 FROM eclipse-temurin:25-jre
 WORKDIR /app

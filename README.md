@@ -34,11 +34,14 @@ Containers:
 - `app`: ContactWork API and Vaadin UI
 - `postgres`: PostgreSQL database
 - `onlyoffice`: internal PDF conversion service
+- `ollama`: local AI model runtime
+- `ollama-pull`: one-shot model download before `app` starts
 
 Published host ports:
 
 - `8083`: ContactWork API and Vaadin UI
 - `5436`: PostgreSQL
+- `11434`: Ollama API
 
 `ONLYOFFICE` is internal-only and is not exposed on the host.
 
@@ -59,6 +62,15 @@ Required private variables:
 - `GMAIL_USERNAME`
 - `GMAIL_APP_PASSWORD`
 - `APP_MAIL_FROM`
+
+Optional AI variables:
+
+- `LOCAL_AI_MODEL`, default `gemma4:e2b`
+- `GOOGLE_API_KEY`, required only when using the Google GenAI provider profile
+- `GOOGLE_GENAI_MODEL`, default `gemini-2.0-flash`
+- `GOOGLE_GENAI_TEMPERATURE`, default `0.2`
+
+On first `docker compose up`, `ollama-pull` downloads the configured local model into the `contactwork_ollama_data` volume before `app` starts.
 
 Initial project defaults still come from `application.yml`, but runtime outreach settings are stored per project:
 

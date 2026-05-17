@@ -27,11 +27,7 @@ public class GmailAliasService {
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
 
-    public GmailAliasService(ProjectService projectService, AppProperties appProperties, ObjectMapper objectMapper) {
-        this(projectService, appProperties, HttpClient.newHttpClient(), objectMapper);
-    }
-
-    GmailAliasService(
+    public GmailAliasService(
             ProjectService projectService,
             AppProperties appProperties,
             HttpClient httpClient,
@@ -51,6 +47,8 @@ public class GmailAliasService {
                 + "&redirect_uri=" + encode(oauth.redirectUri())
                 + "&response_type=code"
                 + "&scope=" + encode(GMAIL_SETTINGS_SCOPE)
+                + "&access_type=online"
+                + "&prompt=consent"
                 + "&state=" + encode(projectId.toString());
     }
 
@@ -83,7 +81,7 @@ public class GmailAliasService {
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
-        return sendJson(request);
+        return sendJson(request, "Google OAuth token request");
     }
 
     private GmailAlias fetchDefaultAlias(String accessToken) {
@@ -94,7 +92,7 @@ public class GmailAliasService {
                 .header("Authorization", "Bearer " + accessToken)
                 .GET()
                 .build();
-        return readDefaultAlias(send(request));
+        return readDefaultAlias(send(request, "Gmail send-as alias request"));
     }
 
     static GmailAlias readDefaultAlias(String responseBody) {
@@ -120,34 +118,65 @@ public class GmailAliasService {
         }
     }
 
-    private JsonNode sendJson(HttpRequest request) {
+    private JsonNode sendJson(HttpRequest request, String label) {
         try {
-            return objectMapper.readTree(send(request));
+            return objectMapper.readTree(send(request, label));
         } catch (IOException ex) {
             throw new IllegalStateException("Failed to parse Google OAuth response", ex);
         }
     }
 
-    private String send(HttpRequest request) {
+    private String send(HttpRequest request, String label) {
         try {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new IllegalStateException("Google API request failed with HTTP " + response.statusCode());
+                throw new IllegalStateException(
+                        label + " failed with HTTP " + response.statusCode() + responseDetail(response.body()));
             }
             return response.body();
         } catch (IOException ex) {
-            throw new IllegalStateException("Google API request failed", ex);
+            throw new IllegalStateException(label + " failed", ex);
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("Google API request was interrupted", ex);
+            throw new IllegalStateException(label + " was interrupted", ex);
         }
     }
 
+    private String responseDetail(String body) {
+        if (body == null || body.isBlank()) {
+            return "";
+        }
+        try {
+            JsonNode node = objectMapper.readTree(body);
+            String message = text(node, "error_description");
+            if (message == null || message.isBlank()) {
+                message = text(node, "error");
+            }
+            if ((message == null || message.isBlank()) && node.path("error").isObject()) {
+                message = text(node.path("error"), "message");
+            }
+            if (message == null || message.isBlank()) {
+                message = text(node, "message");
+            }
+            if (message != null && !message.isBlank()) {
+                return ": " + message;
+            }
+        } catch (IOException ignored) {
+            // Fall through to compact raw body.
+        }
+        String compact = body.replaceAll("\\s+", " ").trim();
+        return compact.isBlank() ? "" : ": " + compact;
+    }
+
     private AppProperties.OAuth oauthProperties() {
-        return appProperties.mail().gmail().oauth();
+        AppProperties.Gmail gmail = appProperties.mail().gmail();
+        return gmail == null ? null : gmail.oauth();
     }
 
     private void requireConfigured(AppProperties.OAuth oauth) {
+        if (oauth == null) {
+            throw new IllegalStateException("Google OAuth client ID, client secret, and redirect URI must be configured");
+        }
         if (isBlank(oauth.clientId()) || isBlank(oauth.clientSecret()) || isBlank(oauth.redirectUri())) {
             throw new IllegalStateException("Google OAuth client ID, client secret, and redirect URI must be configured");
         }

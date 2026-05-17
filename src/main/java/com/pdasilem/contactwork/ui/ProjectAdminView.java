@@ -2,6 +2,13 @@ package com.pdasilem.contactwork.ui;
 
 import com.pdasilem.contactwork.api.ImportContactsResponse;
 import com.pdasilem.contactwork.api.SendStatusResponse;
+import com.pdasilem.contactwork.ai.AiChatMessage;
+import com.pdasilem.contactwork.ai.AiChatRole;
+import com.pdasilem.contactwork.ai.AiChatSession;
+import com.pdasilem.contactwork.ai.AiModelCatalogService;
+import com.pdasilem.contactwork.ai.AppAiSettings;
+import com.pdasilem.contactwork.ai.AppAiSettingsService;
+import com.pdasilem.contactwork.ai.LocalAiService;
 import com.pdasilem.contactwork.config.AppProperties;
 import com.pdasilem.contactwork.contact.Contact;
 import com.pdasilem.contactwork.contact.ContactColumnSource;
@@ -10,10 +17,15 @@ import com.pdasilem.contactwork.contact.ContactService;
 import com.pdasilem.contactwork.contact.ContactStatus;
 import com.pdasilem.contactwork.contact.ProjectContactColumn;
 import com.pdasilem.contactwork.contact.ProjectContactColumnService;
+import com.pdasilem.contactwork.conversation.ContactConversationSummary;
+import com.pdasilem.contactwork.conversation.MailboxMessage;
+import com.pdasilem.contactwork.conversation.MailboxMessageRepository;
 import com.pdasilem.contactwork.inbox.InboxSyncService;
 import com.pdasilem.contactwork.mail.GmailAuthorizationRequiredException;
+import com.pdasilem.contactwork.mail.GmailAliasService;
 import com.pdasilem.contactwork.mail.MailHealthService;
 import com.pdasilem.contactwork.mail.SendCoordinator;
+import com.pdasilem.contactwork.project.AiProvider;
 import com.pdasilem.contactwork.project.Project;
 import com.pdasilem.contactwork.project.ProjectService;
 import com.pdasilem.contactwork.project.ProjectStatus;
@@ -21,9 +33,12 @@ import com.pdasilem.contactwork.project.asset.ProjectAsset;
 import com.pdasilem.contactwork.project.asset.ProjectAssetService;
 import com.pdasilem.contactwork.project.asset.ProjectAssetType;
 import com.vaadin.flow.component.Composite;
+import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.Html;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
+import com.vaadin.flow.component.details.Details;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.html.Div;
@@ -43,11 +58,14 @@ import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.select.Select;
 import com.vaadin.flow.component.textfield.EmailField;
 import com.vaadin.flow.component.textfield.IntegerField;
+import com.vaadin.flow.component.textfield.NumberField;
 import com.vaadin.flow.component.textfield.PasswordField;
 import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.component.upload.Upload;
 import com.vaadin.flow.component.dependency.CssImport;
+import com.vaadin.flow.router.BeforeEnterEvent;
+import com.vaadin.flow.router.BeforeEnterObserver;
 import com.vaadin.flow.router.Route;
 import com.vaadin.flow.server.streams.TransferContext;
 import com.vaadin.flow.server.streams.TransferProgressListener;
@@ -56,6 +74,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -63,10 +82,11 @@ import java.util.Objects;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.web.util.HtmlUtils;
 
 @Route("app")
 @CssImport("./styles/contactwork-app.css")
-public class ProjectAdminView extends Composite<Div> {
+public class ProjectAdminView extends Composite<Div> implements BeforeEnterObserver {
     private static final Logger log = LoggerFactory.getLogger(ProjectAdminView.class);
 
     private final ProjectService projectService;
@@ -74,9 +94,14 @@ public class ProjectAdminView extends Composite<Div> {
     private final ContactImportService contactImportService;
     private final SendCoordinator sendCoordinator;
     private final MailHealthService mailHealthService;
+    private final GmailAliasService gmailAliasService;
     private final InboxSyncService inboxSyncService;
     private final ProjectAssetService projectAssetService;
     private final ProjectContactColumnService projectContactColumnService;
+    private final MailboxMessageRepository mailboxMessageRepository;
+    private final LocalAiService localAiService;
+    private final AiModelCatalogService modelCatalogService;
+    private final AppAiSettingsService appAiSettingsService;
     private final AppProperties appProperties;
 
     private final Div sidebar = new Div();
@@ -93,7 +118,8 @@ public class ProjectAdminView extends Composite<Div> {
 
     private Project selectedProject;
     private Grid<Contact> contactsGrid;
-    private boolean projectDrawerCollapsed;
+    private boolean projectDrawerCollapsed = true;
+    private boolean setupExpanded;
 
     private final Select<ProjectStatus> projectStatus = new Select<>();
     private final TextField mailSubject = new TextField("Email subject");
@@ -114,9 +140,14 @@ public class ProjectAdminView extends Composite<Div> {
             ContactImportService contactImportService,
             SendCoordinator sendCoordinator,
             MailHealthService mailHealthService,
+            GmailAliasService gmailAliasService,
             InboxSyncService inboxSyncService,
             ProjectAssetService projectAssetService,
             ProjectContactColumnService projectContactColumnService,
+            MailboxMessageRepository mailboxMessageRepository,
+            LocalAiService localAiService,
+            AiModelCatalogService modelCatalogService,
+            AppAiSettingsService appAiSettingsService,
             AppProperties appProperties
     ) {
         this.projectService = projectService;
@@ -124,13 +155,51 @@ public class ProjectAdminView extends Composite<Div> {
         this.contactImportService = contactImportService;
         this.sendCoordinator = sendCoordinator;
         this.mailHealthService = mailHealthService;
+        this.gmailAliasService = gmailAliasService;
         this.inboxSyncService = inboxSyncService;
         this.projectAssetService = projectAssetService;
         this.projectContactColumnService = projectContactColumnService;
+        this.mailboxMessageRepository = mailboxMessageRepository;
+        this.localAiService = localAiService;
+        this.modelCatalogService = modelCatalogService;
+        this.appAiSettingsService = appAiSettingsService;
         this.appProperties = appProperties;
         buildShell();
         renderWelcome();
         refreshProjectList();
+    }
+
+    @Override
+    public void beforeEnter(BeforeEnterEvent event) {
+        Map<String, List<String>> parameters = event.getLocation().getQueryParameters().getParameters();
+        String result = first(parameters, "gmailAlias");
+        if (result == null) {
+            return;
+        }
+        String projectId = first(parameters, "projectId");
+        if (projectId != null && !projectId.isBlank()) {
+            try {
+                selectedProject = projectService.getProject(UUID.fromString(projectId));
+                selectedProjectName.setText(selectedProject.getName());
+                refreshProjectList();
+                renderWorkspace();
+            } catch (Exception ex) {
+                log.warn("Gmail alias OAuth return project reload failed: projectId={}", projectId, ex);
+            }
+        } else if (selectedProject != null) {
+            selectedProject = projectService.getProject(selectedProject.getId());
+            loadProjectSettings(selectedProject);
+            updateReadinessState();
+        }
+        if ("success".equals(result)) {
+            log.info("Gmail alias OAuth callback succeeded: projectId={}", projectId);
+            Notification.show("Sender alias synced", 2500, Position.BOTTOM_START);
+        } else {
+            String message = first(parameters, "message");
+            String detail = message == null || message.isBlank() ? "Sender alias sync failed" : message;
+            log.warn("Gmail alias OAuth callback failed: projectId={}, message={}", projectId, detail);
+            Notification.show(detail, 7000, Position.BOTTOM_START);
+        }
     }
 
     private void buildShell() {
@@ -223,8 +292,9 @@ public class ProjectAdminView extends Composite<Div> {
         selectedProjectName.addClassName("cw-selected-project");
 
         Button refresh = new Button("Refresh", VaadinIcon.REFRESH.create(), event -> refreshSelectedProject());
+        Button aiModel = new Button("AI model", VaadinIcon.MAGIC.create(), event -> openAiModelDialog());
         Button settings = new Button("System", VaadinIcon.COG.create(), event -> toggleSystemDrawer());
-        HorizontalLayout right = new HorizontalLayout(refresh, settings);
+        HorizontalLayout right = new HorizontalLayout(refresh, aiModel, settings);
         right.setAlignItems(Alignment.CENTER);
 
         HorizontalLayout bar = new HorizontalLayout(left, selectedProjectName, right);
@@ -247,7 +317,7 @@ public class ProjectAdminView extends Composite<Div> {
         systemDrawer.removeClassName("open");
         selectedProjectName.setText(selectedProject.getName());
 
-        workspace.add(monitoring(), contactsSection(), setupSection());
+        workspace.add(monitoring(), projectAiSection(), contactsSection(), setupSection());
         buildSystemDrawer();
         loadProjectSettings(selectedProject);
         refreshContacts();
@@ -294,6 +364,227 @@ public class ProjectAdminView extends Composite<Div> {
         return card;
     }
 
+    private Div projectAiSection() {
+        Div section = section("Project AI", "Ask project-level questions using read-only project tools.");
+        section.addClassName("cw-ai-section");
+        Div history = new Div();
+        history.addClassName("cw-chat-history");
+        Select<AiChatSession> sessions = new Select<>();
+        sessions.setLabel("Chat");
+        sessions.setItemLabelGenerator(this::chatSessionLabel);
+        loadProjectChatSessions(sessions);
+        renderProjectChat(history, sessions.getValue());
+
+        TextArea question = new TextArea("Ask about this project");
+        question.setWidthFull();
+        Span status = new Span();
+        status.addClassName("cw-muted");
+        Button newChat = new Button("New chat", VaadinIcon.PLUS.create(), event -> {
+            AiChatSession session = localAiService.newProjectChat(selectedProject.getId());
+            selectChatSession(sessions, loadProjectChatSessions(sessions), session.getId());
+            renderProjectChat(history, sessions.getValue());
+        });
+        Button compact = new Button("Compact", VaadinIcon.FILE_TEXT.create(), event -> {
+            if (sessions.getValue() != null) {
+                localAiService.compactSession(sessions.getValue().getId());
+                renderProjectChat(history, sessions.getValue());
+                Notification.show("Chat compacted", 2500, Position.BOTTOM_START);
+            }
+        });
+        Button archive = new Button("Archive", VaadinIcon.ARCHIVE.create(), event -> {
+            if (sessions.getValue() != null) {
+                localAiService.archiveSession(sessions.getValue().getId());
+                loadProjectChatSessions(sessions);
+                renderProjectChat(history, sessions.getValue());
+            }
+        });
+        Button delete = new Button("Delete", VaadinIcon.TRASH.create(), event -> {
+            if (sessions.getValue() != null) {
+                localAiService.deleteSession(sessions.getValue().getId());
+                loadProjectChatSessions(sessions);
+                renderProjectChat(history, sessions.getValue());
+            }
+        });
+        Button systemPrompt = new Button("System prompt", VaadinIcon.COG.create(), event -> openSystemPromptDialog());
+        sessions.addValueChangeListener(event -> renderProjectChat(history, event.getValue()));
+        Button ask = new Button("Ask", VaadinIcon.COMMENT_ELLIPSIS.create());
+        ask.addClickListener(event -> {
+            String prompt = blankToNull(question.getValue());
+            if (prompt == null) {
+                return;
+            }
+            ask.setEnabled(false);
+            status.setText("Asking AI...");
+            try {
+                AiChatSession session = sessions.getValue();
+                if (session == null) {
+                    session = localAiService.newProjectChat(selectedProject.getId());
+                    selectChatSession(sessions, loadProjectChatSessions(sessions), session.getId());
+                }
+                localAiService.askProject(selectedProject.getId(), session.getId(), prompt);
+                question.clear();
+                renderProjectChat(history, session);
+                selectChatSession(sessions, loadProjectChatSessions(sessions), session.getId());
+            } catch (Exception ex) {
+                Notification.show(rootCauseMessage("Project AI failed", ex), 5000, Position.BOTTOM_START);
+            } finally {
+                ask.setEnabled(true);
+                status.setText("");
+            }
+        });
+        ask.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        HorizontalLayout sessionControls = new HorizontalLayout(sessions, newChat, compact, archive, delete);
+        sessionControls.setAlignItems(Alignment.BASELINE);
+        HorizontalLayout controls = new HorizontalLayout(ask, systemPrompt, status);
+        controls.setAlignItems(Alignment.CENTER);
+        section.add(sessionControls, history, question, controls);
+        return section;
+    }
+
+    private void openAiModelDialog() {
+        Dialog dialog = new Dialog();
+        dialog.setHeaderTitle("AI model");
+        dialog.setWidth("520px");
+        AppAiSettings settings = appAiSettingsService.current();
+
+        Select<AiProvider> provider = new Select<>();
+        provider.setLabel("Provider");
+        provider.setWidthFull();
+        provider.setItems(AiProvider.LOCAL_OLLAMA, AiProvider.GOOGLE_GENAI);
+        provider.setItemLabelGenerator(this::aiProviderLabel);
+        provider.setValue(settings.getProvider());
+
+        Select<String> model = new Select<>();
+        model.setLabel("Model");
+        model.setWidthFull();
+        model.setEmptySelectionAllowed(false);
+        loadAiModels(provider.getValue(), settings.getModel(), model);
+
+        NumberField temperature = new NumberField("Temperature");
+        temperature.setWidthFull();
+        temperature.setMin(AppAiSettingsService.MIN_AI_TEMPERATURE);
+        temperature.setMax(AppAiSettingsService.MAX_AI_TEMPERATURE);
+        temperature.setStep(0.1);
+        temperature.setValue(settings.getTemperature());
+
+        provider.addValueChangeListener(event -> loadAiModels(event.getValue(), model.getValue(), model));
+        Button refreshModels = new Button("Refresh models", VaadinIcon.REFRESH.create(),
+                event -> loadAiModels(provider.getValue(), model.getValue(), model));
+
+        Button save = new Button("Save", VaadinIcon.CHECK.create(), event -> {
+            try {
+                appAiSettingsService.save(provider.getValue(), model.getValue(), temperature.getValue());
+                Notification.show("AI model saved", 2500, Position.BOTTOM_START);
+                dialog.close();
+            } catch (Exception ex) {
+                Notification.show(rootCauseMessage("AI model save failed", ex), 5000, Position.BOTTOM_START);
+            }
+        });
+        save.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+
+        Div content = new Div(provider, model, temperature, refreshModels);
+        content.addClassName("cw-dialog-form");
+        dialog.add(content);
+        dialog.getFooter().add(save, new Button("Close", event -> dialog.close()));
+        dialog.open();
+    }
+
+    private void loadAiModels(AiProvider provider, String currentModel, Select<String> model) {
+        String current = currentModel == null || currentModel.isBlank()
+                ? AppAiSettingsService.FALLBACK_LOCAL_AI_MODEL
+                : currentModel.trim();
+        try {
+            List<String> models = modelCatalogService.modelsFor(provider, current);
+            if (models.isEmpty()) {
+                Notification.show("No AI models loaded", 3500, Position.BOTTOM_START);
+            } else if (provider != AiProvider.GOOGLE_GENAI && !models.contains(current)) {
+                models = new ArrayList<>(models);
+                models.add(current);
+            }
+            model.setItems(models);
+            model.setValue(models.contains(current) ? current : models.stream().findFirst().orElse(null));
+        } catch (Exception ex) {
+            model.setItems(current);
+            model.setValue(current);
+            Notification.show(rootCauseMessage("Model refresh failed", ex), 5000, Position.BOTTOM_START);
+        }
+    }
+
+    private void openSystemPromptDialog() {
+        Dialog dialog = new Dialog();
+        dialog.setHeaderTitle("Project system prompt");
+        dialog.setWidth("720px");
+
+        TextArea prompt = new TextArea("System prompt");
+        prompt.setWidthFull();
+        prompt.setMinHeight("260px");
+        prompt.setValue(projectService.aiSystemPrompt(selectedProject));
+
+        Button save = new Button("Save", VaadinIcon.CHECK.create(), event -> {
+            try {
+                selectedProject = projectService.updateAiSystemPrompt(selectedProject.getId(), prompt.getValue());
+                Notification.show("System prompt saved", 2500, Position.BOTTOM_START);
+                dialog.close();
+            } catch (Exception ex) {
+                Notification.show(rootCauseMessage("System prompt save failed", ex), 5000, Position.BOTTOM_START);
+            }
+        });
+        save.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        Button reset = new Button("Reset", VaadinIcon.REFRESH.create(), event -> {
+            try {
+                selectedProject = projectService.resetAiSystemPrompt(selectedProject.getId());
+                prompt.setValue(projectService.aiSystemPrompt(selectedProject));
+                Notification.show("System prompt reset", 2500, Position.BOTTOM_START);
+            } catch (Exception ex) {
+                Notification.show(rootCauseMessage("System prompt reset failed", ex), 5000, Position.BOTTOM_START);
+            }
+        });
+
+        Div content = new Div(prompt);
+        content.addClassName("cw-dialog-form");
+        dialog.add(content);
+        dialog.getFooter().add(reset, save, new Button("Close", event -> dialog.close()));
+        dialog.open();
+    }
+
+    private List<AiChatSession> loadProjectChatSessions(Select<AiChatSession> sessions) {
+        List<AiChatSession> items = localAiService.projectSessions(selectedProject.getId());
+        sessions.setItems(items);
+        sessions.setValue(items.stream().findFirst().orElse(null));
+        return items;
+    }
+
+    private void renderProjectChat(Div history, AiChatSession session) {
+        if (session == null) {
+            renderChatMessages(history, List.of());
+            return;
+        }
+        renderChatMessages(history, localAiService.projectMessages(selectedProject.getId(), session.getId()));
+    }
+
+    private String chatSessionLabel(AiChatSession session) {
+        if (session == null) {
+            return "No chat";
+        }
+        String title = session.getTitle();
+        return title == null || title.isBlank() ? session.getId().toString() : title;
+    }
+
+    private void selectChatSession(Select<AiChatSession> sessions, List<AiChatSession> items, UUID sessionId) {
+        if (sessionId == null) {
+            sessions.setValue(null);
+            return;
+        }
+        items.stream()
+                .filter(session -> sessionId.equals(session.getId()))
+                .findFirst()
+                .ifPresent(sessions::setValue);
+    }
+
+    private String aiProviderLabel(AiProvider provider) {
+        return provider == AiProvider.GOOGLE_GENAI ? "Google GenAI" : "Local Ollama";
+    }
+
     private Div contactsSection() {
         Div section = new Div();
         section.addClassName("cw-section");
@@ -311,9 +602,12 @@ public class ProjectAdminView extends Composite<Div> {
         Button add = new Button("Add row", VaadinIcon.PLUS.create(), event -> openAddContactDialog());
         Button edit = new Button("Edit selected", VaadinIcon.EDIT.create(), event -> editSelectedContact());
         Button preview = new Button("Preview letter", VaadinIcon.FILE_TEXT.create(), event -> previewSelectedContact());
+        Button conversation = new Button("Conversation", VaadinIcon.COMMENTS.create(), event -> openSelectedConversation());
         Button delete = new Button("Delete selected", VaadinIcon.TRASH.create(), event -> confirmDeleteSelectedContact());
+        Span selectedCount = new Span("Selected: 0");
+        selectedCount.addClassName("cw-muted");
 
-        HorizontalLayout toolbar = new HorizontalLayout(filter, add, edit, preview, delete, sync, send);
+        HorizontalLayout toolbar = new HorizontalLayout(filter, selectedCount, add, edit, preview, conversation, delete, sync, send);
         toolbar.addClassName("cw-toolbar");
         toolbar.setWidthFull();
         toolbar.expand(filter);
@@ -322,15 +616,20 @@ public class ProjectAdminView extends Composite<Div> {
         contactsGrid.addClassName("cw-contacts-grid");
         rebuildContactGridColumns();
         contactsGrid.setHeight("340px");
-        contactsGrid.asSingleSelect().addValueChangeListener(event -> {
-            boolean selected = event.getValue() != null;
-            edit.setEnabled(selected);
-            preview.setEnabled(selected);
-            delete.setEnabled(selected);
+        contactsGrid.setSelectionMode(Grid.SelectionMode.MULTI);
+        contactsGrid.addSelectionListener(event -> {
+            int count = event.getAllSelectedItems().size();
+            boolean single = count == 1;
+            selectedCount.setText("Selected: " + count);
+            edit.setEnabled(single);
+            preview.setEnabled(single);
+            conversation.setEnabled(single);
+            delete.setEnabled(count > 0);
         });
-        contactsGrid.addItemDoubleClickListener(event -> openContactDialog(event.getItem()));
+        contactsGrid.addItemDoubleClickListener(event -> openConversationDialog(event.getItem()));
         edit.setEnabled(false);
         preview.setEnabled(false);
+        conversation.setEnabled(false);
         delete.setEnabled(false);
 
         section.add(toolbar, contactsGrid);
@@ -362,7 +661,8 @@ public class ProjectAdminView extends Composite<Div> {
     }
 
     private Div setupSection() {
-        Div section = section("Project setup", value(selectedProject.getDescription()));
+        Div section = new Div();
+        section.addClassName("cw-section");
         section.addClassName("cw-setup");
 
         configureProjectFields();
@@ -387,8 +687,28 @@ public class ProjectAdminView extends Composite<Div> {
         letterAssetList.addClassName("cw-asset-list");
         attachmentAssetList.addClassName("cw-asset-list");
         refreshAssets();
-        section.add(form, uploads, readinessState, save);
+        Div setupBody = new Div(form, uploads, readinessState, gmailSentFolderWarning(), save);
+        setupBody.addClassName("cw-setup-body");
+        Details details = new Details(setupSummary(), setupBody);
+        details.setOpened(setupExpanded);
+        details.addOpenedChangeListener(event -> setupExpanded = event.isOpened());
+        section.add(details);
         return section;
+    }
+
+    private Div setupSummary() {
+        Div summary = new Div();
+        summary.addClassName("cw-setup-summary");
+        Div title = new Div();
+        title.add(new H3("Project setup"), new Span(value(selectedProject.getDescription())));
+        title.addClassName("cw-setup-summary-title");
+        summary.add(title);
+        summary.add(pill(selectedProject.getStatus().name(), selectedProject.getStatus() == ProjectStatus.ACTIVE ? "success" : "warning"));
+        summary.add(pill(projectAssetService.activeLetter(selectedProject.getId()).isPresent() ? "Letter ready" : "Letter missing",
+                projectAssetService.activeLetter(selectedProject.getId()).isPresent() ? "success" : "warning"));
+        summary.add(pill(hasProjectCredential(selectedProject.getGmailUsername()) ? "Mailbox ready" : "Mailbox missing",
+                hasProjectCredential(selectedProject.getGmailUsername()) ? "success" : "warning"));
+        return summary;
     }
 
     private void configureProjectFields() {
@@ -449,9 +769,9 @@ public class ProjectAdminView extends Composite<Div> {
         if (value(selectedProject.getMailBody()).isBlank()) {
             reasons.add("body missing");
         }
-        if (!hasEffectiveCredential(selectedProject.getGmailUsername(), appProperties.mail().gmail().username())
-                || !hasEffectiveCredential(selectedProject.getGmailAppPassword(), appProperties.mail().gmail().appPassword())) {
-            reasons.add("system credentials missing");
+        if (!hasProjectCredential(selectedProject.getGmailUsername())
+                || !hasProjectCredential(selectedProject.getGmailAppPassword())) {
+            reasons.add("missing Gmail credentials");
         }
         if (reasons.isEmpty()) {
             readinessState.setText("Ready for sending");
@@ -487,7 +807,13 @@ public class ProjectAdminView extends Composite<Div> {
             refreshAssets();
         });
         Span file = new Span(asset.getOriginalFilename() + " - " + sizeKb(asset.getSizeBytes()) + " KB");
-        Div row = new Div(file, remove);
+        Div row = new Div(file);
+        if (asset.getType() == ProjectAssetType.LETTER_TEMPLATE) {
+            Button edit = new Button("Edit", VaadinIcon.EDIT.create(), event ->
+                    UI.getCurrent().getPage().open("/onlyoffice/projects/" + selectedProject.getId() + "/editor", "_blank"));
+            row.add(edit);
+        }
+        row.add(remove);
         row.addClassName("cw-asset-row");
         return row;
     }
@@ -553,12 +879,13 @@ public class ProjectAdminView extends Composite<Div> {
         senderAliasStatus.addClassName("cw-muted");
 
         Button health = new Button("Check mailbox", VaadinIcon.CONNECT.create(), event -> checkMailbox());
+        Button syncAlias = new Button("Sync Gmail sender alias", VaadinIcon.USER_CHECK.create(), event -> syncGmailSenderAlias());
         Button save = new Button("Save system settings", VaadinIcon.CHECK.create(), event -> saveProjectSettings(true));
         save.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         Button close = new Button("Close", VaadinIcon.CLOSE_SMALL.create(), event -> systemDrawer.removeClassName("open"));
 
-        VerticalLayout content = new VerticalLayout(title, helper, projectStatus, mailFromName, mailFrom, senderAliasStatus, gmailUsername,
-                gmailAppPassword, sendDelayMs, maxMessagesPerBatch, inboxSyncCron, health, save, close);
+        VerticalLayout content = new VerticalLayout(title, helper, gmailSentFolderWarning(), projectStatus, mailFromName, mailFrom, senderAliasStatus, gmailUsername,
+                gmailAppPassword, sendDelayMs, maxMessagesPerBatch, inboxSyncCron, health, syncAlias, save, close);
         content.setPadding(false);
         content.setSpacing(true);
         systemDrawer.add(content);
@@ -652,14 +979,21 @@ public class ProjectAdminView extends Composite<Div> {
     }
 
     private void editSelectedContact() {
-        Contact contact = contactsGrid.asSingleSelect().getValue();
+        Contact contact = singleSelectedContact();
         if (contact != null) {
             openContactDialog(contact);
         }
     }
 
+    private void openSelectedConversation() {
+        Contact contact = singleSelectedContact();
+        if (contact != null) {
+            openConversationDialog(contact);
+        }
+    }
+
     private void previewSelectedContact() {
-        Contact contact = contactsGrid.asSingleSelect().getValue();
+        Contact contact = singleSelectedContact();
         if (contact == null) {
             return;
         }
@@ -668,7 +1002,8 @@ public class ProjectAdminView extends Composite<Div> {
     }
 
     private void openSendDialog() {
-        Contact contact = contactsGrid.asSingleSelect().getValue();
+        List<Contact> selectedContacts = selectedContacts();
+        Contact contact = selectedContacts.size() == 1 ? selectedContacts.get(0) : null;
         SendStatusResponse status = sendCoordinator.getStatus(selectedProject.getId());
         List<String> blockers = sendingBlockers();
 
@@ -680,7 +1015,7 @@ public class ProjectAdminView extends Composite<Div> {
         mode.setLabel("Send mode");
         mode.setItems(SendMode.SELECTED_CONTACT, SendMode.BATCH);
         mode.setItemLabelGenerator(SendMode::label);
-        mode.setValue(contact == null ? SendMode.BATCH : SendMode.SELECTED_CONTACT);
+        mode.setValue(selectedContacts.isEmpty() ? SendMode.BATCH : SendMode.SELECTED_CONTACT);
 
         Span error = new Span();
         error.addClassName("cw-error");
@@ -688,16 +1023,16 @@ public class ProjectAdminView extends Composite<Div> {
         Div body = new Div();
         body.addClassName("cw-dialog-form");
         body.add(mode, sendReadinessSummary(blockers), sendCounterSummary(status), batchRuleSummary(status),
-                selectedContactSummary(contact), attachmentSummary(), error);
+                selectedContactsSummary(selectedContacts), attachmentSummary(), error);
 
         Button cancel = new Button("Cancel", event -> dialog.close());
-        Button sendContact = new Button(contactRequiresForce(contact) ? "Send again" : "Send contact", event -> {
-            if (contact == null) {
-                error.setText("Select a contact before sending.");
+        Button sendContact = new Button(contactRequiresForce(contact) ? "Send again" : "Send selected", event -> {
+            if (selectedContacts.isEmpty()) {
+                error.setText("Select one or more contacts before sending.");
                 return;
             }
-            boolean force = contactRequiresForce(contact);
-            if (executeSendContact(contact, force, error)) {
+            boolean force = selectedContacts.size() == 1 && contactRequiresForce(contact);
+            if (executeSendContacts(selectedContacts, force, error)) {
                 dialog.close();
             }
         });
@@ -714,7 +1049,7 @@ public class ProjectAdminView extends Composite<Div> {
         } else {
             sendContact.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         }
-        sendContact.setEnabled(contact != null && blockers.isEmpty());
+        sendContact.setEnabled(!selectedContacts.isEmpty() && blockers.isEmpty());
         startBatch.setEnabled(blockers.isEmpty() && !status.running() && status.eligibleBatchCount() > 0);
         mode.addValueChangeListener(event -> {
             boolean selectedMode = event.getValue() == SendMode.SELECTED_CONTACT;
@@ -730,11 +1065,17 @@ public class ProjectAdminView extends Composite<Div> {
     }
 
     private boolean executeSendContact(Contact contact, boolean force, Span error) {
+        return executeSendContacts(List.of(contact), force, error);
+    }
+
+    private boolean executeSendContacts(List<Contact> contacts, boolean force, Span error) {
         try {
-            sendCoordinator.sendSingle(selectedProject.getId(), contact.getId(), force);
+            for (Contact contact : contacts) {
+                sendCoordinator.sendSingle(selectedProject.getId(), contact.getId(), force);
+            }
             refreshContacts();
             renderWorkspace();
-            Notification.show("Contact send processed", 2500, Position.BOTTOM_START);
+            Notification.show("Selected send processed: " + contacts.size(), 2500, Position.BOTTOM_START);
             return true;
         } catch (Exception ex) {
             refreshContacts();
@@ -794,13 +1135,19 @@ public class ProjectAdminView extends Composite<Div> {
         return summary;
     }
 
-    private Div selectedContactSummary(Contact contact) {
+    private Div selectedContactsSummary(List<Contact> contacts) {
         Div summary = new Div();
         summary.addClassName("cw-send-summary");
-        if (contact == null) {
-            summary.add(new Span("Selected contact: none"));
+        if (contacts.isEmpty()) {
+            summary.add(new Span("Selected contacts: none"));
             return summary;
         }
+        if (contacts.size() > 1) {
+            summary.add(new Span("Selected contacts: " + contacts.size()));
+            summary.add(new Span("Bulk selected send processes NEW and SEND_FAILED contacts; already handled contacts are skipped."));
+            return summary;
+        }
+        Contact contact = contacts.get(0);
         summary.add(new Span("Selected contact: " + value(contact.getEmail())));
         summary.add(new Span("Name: " + value(contact.getContactName())));
         summary.add(new Span("Organization: " + value(contact.getOrganizationName())));
@@ -837,8 +1184,8 @@ public class ProjectAdminView extends Composite<Div> {
         if (value(selectedProject.getMailBody()).isBlank()) {
             blockers.add("missing body");
         }
-        if (!hasEffectiveCredential(selectedProject.getGmailUsername(), appProperties.mail().gmail().username())
-                || !hasEffectiveCredential(selectedProject.getGmailAppPassword(), appProperties.mail().gmail().appPassword())) {
+        if (!hasProjectCredential(selectedProject.getGmailUsername())
+                || !hasProjectCredential(selectedProject.getGmailAppPassword())) {
             blockers.add("missing Gmail credentials");
         }
         if (projectAssetService.activeLetter(selectedProject.getId()).isEmpty()) {
@@ -852,20 +1199,22 @@ public class ProjectAdminView extends Composite<Div> {
     }
 
     private void confirmDeleteSelectedContact() {
-        Contact contact = contactsGrid.asSingleSelect().getValue();
-        if (contact == null) {
+        List<Contact> contacts = selectedContacts();
+        if (contacts.isEmpty()) {
             return;
         }
         Dialog dialog = new Dialog();
         dialog.setHeaderTitle("Delete contact");
-        dialog.add(new Span("Delete " + contact.getEmail() + "? History is kept when the contact was already used."));
+        dialog.add(new Span(contacts.size() == 1
+                ? "Delete " + contacts.get(0).getEmail() + "? History is kept when the contact was already used."
+                : "Delete " + contacts.size() + " selected contacts? History is kept when contacts were already used."));
         Button cancel = new Button("Cancel", event -> dialog.close());
         Button delete = new Button("Delete", event -> {
             try {
-                contactService.deleteContact(selectedProject.getId(), contact.getId());
+                contacts.forEach(contact -> contactService.deleteContact(selectedProject.getId(), contact.getId()));
                 refreshContacts();
                 dialog.close();
-                Notification.show("Contact deleted", 2500, Position.BOTTOM_START);
+                Notification.show("Contact(s) deleted: " + contacts.size(), 2500, Position.BOTTOM_START);
             } catch (Exception ex) {
                 Notification.show(ex.getMessage(), 5000, Position.BOTTOM_START);
             }
@@ -873,6 +1222,18 @@ public class ProjectAdminView extends Composite<Div> {
         delete.addThemeVariants(ButtonVariant.LUMO_ERROR, ButtonVariant.LUMO_PRIMARY);
         dialog.getFooter().add(cancel, delete);
         dialog.open();
+    }
+
+    private Contact singleSelectedContact() {
+        List<Contact> contacts = selectedContacts();
+        return contacts.size() == 1 ? contacts.get(0) : null;
+    }
+
+    private List<Contact> selectedContacts() {
+        if (contactsGrid == null) {
+            return List.of();
+        }
+        return contactsGrid.getSelectedItems().stream().toList();
     }
 
     private String valueForColumn(Contact contact, ProjectContactColumn column) {
@@ -887,6 +1248,249 @@ public class ProjectAdminView extends Composite<Div> {
                     .findFirst()
                     .orElse("");
         };
+    }
+
+    private void openConversationDialog(Contact contact) {
+        Dialog dialog = new Dialog();
+        dialog.setHeaderTitle("Conversation");
+        dialog.setWidth("860px");
+        dialog.setMaxWidth("95vw");
+
+        Div header = new Div();
+        header.addClassName("cw-conversation-header");
+        header.add(new H3(value(contact.getContactName())),
+                new Span(value(contact.getEmail())),
+                new Span(value(contact.getOrganizationName())),
+                pill(contact.getStatus().name(), contact.getStatus() == ContactStatus.REPLIED ? "success" : "warning"));
+
+        Div messages = new Div();
+        messages.addClassName("cw-conversation-list");
+        renderConversationMessages(messages, contact);
+
+        Div summary = new Div();
+        summary.addClassName("cw-summary-box");
+        renderSummary(summary, contact);
+
+        Span aiStatus = new Span();
+        aiStatus.addClassName("cw-muted");
+        Span syncStatus = new Span();
+        syncStatus.addClassName("cw-muted");
+        Button syncContactInbox = new Button("Sync inbox", VaadinIcon.INBOX.create(), event -> {
+            syncStatus.setText("Syncing inbox for this contact...");
+            int before = mailboxMessageRepository.findByProjectIdAndContactIdOrderByServiceDateAsc(
+                    selectedProject.getId(), contact.getId()).size();
+            try {
+                inboxSyncService.syncInbox(selectedProject.getId());
+                renderConversationMessages(messages, contact);
+                refreshContacts();
+                int after = mailboxMessageRepository.findByProjectIdAndContactIdOrderByServiceDateAsc(
+                        selectedProject.getId(), contact.getId()).size();
+                String message = after > before
+                        ? "Synced " + (after - before) + " new message(s) for this contact"
+                        : "No new messages for this contact";
+                syncStatus.setText(message);
+                Notification.show(message, 2500, Position.BOTTOM_START);
+            } catch (Exception ex) {
+                syncStatus.setText("");
+                Notification.show(rootCauseMessage("Contact inbox sync failed", ex), 5000, Position.BOTTOM_START);
+            }
+        });
+        Button summarize = new Button("Summarize", VaadinIcon.MAGIC.create());
+        summarize.addClickListener(event -> {
+            summarize.setEnabled(false);
+            aiStatus.setText("Summarizing...");
+            try {
+                localAiService.summarizeContact(selectedProject.getId(), contact.getId());
+                renderSummary(summary, contact);
+            } catch (Exception ex) {
+                Notification.show(rootCauseMessage("Summary failed", ex), 5000, Position.BOTTOM_START);
+            } finally {
+                summarize.setEnabled(true);
+                aiStatus.setText("");
+            }
+        });
+
+        Div chatHistory = new Div();
+        chatHistory.addClassName("cw-chat-history");
+        Select<AiChatSession> chatSessions = new Select<>();
+        chatSessions.setLabel("Chat");
+        chatSessions.setItemLabelGenerator(this::chatSessionLabel);
+        loadContactChatSessions(chatSessions, contact);
+        renderContactChat(chatHistory, contact, chatSessions.getValue());
+        TextArea question = new TextArea("Ask about this contact");
+        question.setWidthFull();
+        Button newChat = new Button("New chat", VaadinIcon.PLUS.create(), event -> {
+            AiChatSession session = localAiService.newContactChat(selectedProject.getId(), contact.getId());
+            selectChatSession(chatSessions, loadContactChatSessions(chatSessions, contact), session.getId());
+            renderContactChat(chatHistory, contact, chatSessions.getValue());
+        });
+        Button compact = new Button("Compact", VaadinIcon.FILE_TEXT.create(), event -> {
+            if (chatSessions.getValue() != null) {
+                localAiService.compactSession(chatSessions.getValue().getId());
+                renderContactChat(chatHistory, contact, chatSessions.getValue());
+                Notification.show("Chat compacted", 2500, Position.BOTTOM_START);
+            }
+        });
+        Button archive = new Button("Archive", VaadinIcon.ARCHIVE.create(), event -> {
+            if (chatSessions.getValue() != null) {
+                localAiService.archiveSession(chatSessions.getValue().getId());
+                loadContactChatSessions(chatSessions, contact);
+                renderContactChat(chatHistory, contact, chatSessions.getValue());
+            }
+        });
+        Button deleteChat = new Button("Delete", VaadinIcon.TRASH.create(), event -> {
+            if (chatSessions.getValue() != null) {
+                localAiService.deleteSession(chatSessions.getValue().getId());
+                loadContactChatSessions(chatSessions, contact);
+                renderContactChat(chatHistory, contact, chatSessions.getValue());
+            }
+        });
+        chatSessions.addValueChangeListener(event -> renderContactChat(chatHistory, contact, event.getValue()));
+        Button ask = new Button("Ask", VaadinIcon.COMMENT_ELLIPSIS.create());
+        ask.addClickListener(event -> {
+            String prompt = blankToNull(question.getValue());
+            if (prompt == null) {
+                return;
+            }
+            ask.setEnabled(false);
+            aiStatus.setText("Asking AI...");
+            try {
+                AiChatSession session = chatSessions.getValue();
+                if (session == null) {
+                    session = localAiService.newContactChat(selectedProject.getId(), contact.getId());
+                    selectChatSession(chatSessions, loadContactChatSessions(chatSessions, contact), session.getId());
+                }
+                localAiService.askContact(selectedProject.getId(), contact.getId(), session.getId(), prompt);
+                question.clear();
+                renderContactChat(chatHistory, contact, session);
+                selectChatSession(chatSessions, loadContactChatSessions(chatSessions, contact), session.getId());
+            } catch (Exception ex) {
+                Notification.show(rootCauseMessage("Contact AI failed", ex), 5000, Position.BOTTOM_START);
+            } finally {
+                ask.setEnabled(true);
+                aiStatus.setText("");
+            }
+        });
+        ask.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+
+        HorizontalLayout chatControls = new HorizontalLayout(chatSessions, newChat, compact, archive, deleteChat);
+        chatControls.setAlignItems(Alignment.BASELINE);
+        Div content = new Div(header, syncContactInbox, syncStatus, messages, summary, summarize, aiStatus,
+                chatControls, chatHistory, question, ask);
+        content.addClassName("cw-conversation-panel");
+        dialog.add(content);
+        dialog.getFooter().add(new Button("Close", event -> dialog.close()));
+        dialog.open();
+    }
+
+    private void renderConversationMessages(Div target, Contact contact) {
+        target.removeAll();
+        List<MailboxMessage> messages = mailboxMessageRepository.findByProjectIdAndContactIdOrderByServiceDateAsc(
+                selectedProject.getId(), contact.getId());
+        if (messages.isEmpty()) {
+            Span empty = new Span("No synced mailbox messages.");
+            empty.addClassName("cw-muted");
+            target.add(empty);
+            return;
+        }
+        for (MailboxMessage message : messages) {
+            Div item = new Div();
+            item.addClassName("cw-conversation-message");
+            item.add(new Span(value(message.getServiceDate())),
+                    pill(message.getDirection().name(), message.getDirection().name().equals("SENT") ? "success" : "warning"),
+                    new Span(value(message.getSubject())),
+                    new Span(value(message.getBodyText())));
+            target.add(item);
+        }
+    }
+
+    private void renderSummary(Div target, Contact contact) {
+        target.removeAll();
+        String text = localAiService.findSummary(contact.getId())
+                .map(ContactConversationSummary::getSummaryText)
+                .orElse("No saved summary.");
+        target.add(markdown(text));
+    }
+
+    private List<AiChatSession> loadContactChatSessions(Select<AiChatSession> sessions, Contact contact) {
+        List<AiChatSession> items = localAiService.contactSessions(contact.getId());
+        sessions.setItems(items);
+        sessions.setValue(items.stream().findFirst().orElse(null));
+        return items;
+    }
+
+    private void renderContactChat(Div history, Contact contact, AiChatSession session) {
+        if (session == null) {
+            renderChatMessages(history, List.of());
+            return;
+        }
+        renderChatMessages(history, localAiService.contactMessages(selectedProject.getId(), contact.getId(), session.getId()));
+    }
+
+    private void renderChatMessages(Div target, List<AiChatMessage> messages) {
+        target.removeAll();
+        if (messages.isEmpty()) {
+            Span empty = new Span("No AI messages yet.");
+            empty.addClassName("cw-muted");
+            target.add(empty);
+            return;
+        }
+        for (AiChatMessage message : messages) {
+            Div row = new Div();
+            row.addClassName("cw-chat-message");
+            row.addClassName(message.getRole() == AiChatRole.USER ? "user" : "assistant");
+            row.add(new Span(message.getRole().name()), markdown(message.getContent()));
+            target.add(row);
+        }
+    }
+
+    private Component markdown(String text) {
+        String value = text == null || text.isBlank() ? "" : text;
+        StringBuilder html = new StringBuilder("<div class=\"cw-markdown\">");
+        boolean listOpen = false;
+        for (String rawLine : value.split("\\R", -1)) {
+            String line = rawLine.strip();
+            if (line.isBlank()) {
+                if (listOpen) {
+                    html.append("</ul>");
+                    listOpen = false;
+                }
+                continue;
+            }
+            if (line.startsWith("- ") || line.startsWith("* ")) {
+                if (!listOpen) {
+                    html.append("<ul>");
+                    listOpen = true;
+                }
+                html.append("<li>").append(inlineMarkdown(line.substring(2))).append("</li>");
+                continue;
+            }
+            if (listOpen) {
+                html.append("</ul>");
+                listOpen = false;
+            }
+            if (line.startsWith("### ")) {
+                html.append("<h4>").append(inlineMarkdown(line.substring(4))).append("</h4>");
+            } else if (line.startsWith("## ")) {
+                html.append("<h3>").append(inlineMarkdown(line.substring(3))).append("</h3>");
+            } else if (line.startsWith("# ")) {
+                html.append("<h2>").append(inlineMarkdown(line.substring(2))).append("</h2>");
+            } else {
+                html.append("<p>").append(inlineMarkdown(line)).append("</p>");
+            }
+        }
+        if (listOpen) {
+            html.append("</ul>");
+        }
+        html.append("</div>");
+        return new Html(html.toString());
+    }
+
+    private String inlineMarkdown(String text) {
+        String escaped = HtmlUtils.htmlEscape(text == null ? "" : text);
+        return escaped
+                .replaceAll("`([^`]+)`", "<code>$1</code>")
+                .replaceAll("\\*\\*([^*]+)\\*\\*", "<strong>$1</strong>");
     }
 
     private void openContactDialog(Contact contact) {
@@ -1041,14 +1645,59 @@ public class ProjectAdminView extends Composite<Div> {
 
     private void checkMailbox() {
         try {
-            selectedProject = mailHealthService.verifyConnectionsAndSyncAlias(selectedProject.getId());
+            log.info("Mailbox check started: projectId={}", selectedProject.getId());
+            mailHealthService.verifyConnections(selectedProject.getId());
+            selectedProject = projectService.getProject(selectedProject.getId());
             loadProjectSettings(selectedProject);
             updateReadinessState();
-            Notification.show("Mailbox connection OK. Sender alias synced.", 2500, Position.BOTTOM_START);
-        } catch (GmailAuthorizationRequiredException ex) {
-            UI.getCurrent().getPage().setLocation(ex.getAuthorizationUrl());
+            log.info("Mailbox check succeeded: projectId={}", selectedProject.getId());
+            Notification.show("Mailbox connection OK", 2500, Position.BOTTOM_START);
         } catch (Exception ex) {
-            Notification.show(ex.getMessage(), 5000, Position.BOTTOM_START);
+            log.warn("Mailbox check failed: projectId={}", selectedProject == null ? null : selectedProject.getId(), ex);
+            Notification.show(rootCauseMessage("Mailbox check failed", ex), 5000, Position.BOTTOM_START);
+        }
+    }
+
+    private Span gmailSentFolderWarning() {
+        String sentFolder = appProperties.mail().gmail().sentFolder();
+        Span warning = new Span();
+        warning.addClassNames("cw-pill", "cw-pill-warning");
+        if (sentFolder == null || sentFolder.isBlank()) {
+            warning.setText("Gmail Sent folder is blank; sent-message sync may miss outgoing mail.");
+            return warning;
+        }
+        if ("[Gmail]/Sent".equalsIgnoreCase(sentFolder.trim())) {
+            warning.setText("Gmail Sent folder is configured as " + sentFolder
+                    + "; Gmail IMAP commonly uses [Gmail]/Sent Mail. Verify the folder exists.");
+            return warning;
+        }
+        warning.setText("Gmail Sent folder: " + sentFolder);
+        warning.addClassName("cw-muted");
+        return warning;
+    }
+
+    private void syncGmailSenderAlias() {
+        try {
+            log.info("Gmail sender alias sync started: projectId={}", selectedProject.getId());
+            gmailAliasService.syncDefaultAlias(selectedProject.getId());
+            selectedProject = projectService.getProject(selectedProject.getId());
+            loadProjectSettings(selectedProject);
+            updateReadinessState();
+            log.info("Gmail sender alias sync succeeded: projectId={}", selectedProject.getId());
+            Notification.show("Sender alias synced", 2500, Position.BOTTOM_START);
+        } catch (GmailAuthorizationRequiredException ex) {
+            log.info("Gmail sender alias sync requires OAuth redirect: projectId={}", selectedProject.getId());
+            UI.getCurrent().getPage().setLocation(ex.getAuthorizationUrl());
+        } catch (IllegalStateException ex) {
+            log.warn("Gmail sender alias sync failed: projectId={}", selectedProject == null ? null : selectedProject.getId(), ex);
+            if ("Google OAuth client ID, client secret, and redirect URI must be configured".equals(ex.getMessage())) {
+                Notification.show(ex.getMessage(), 5000, Position.BOTTOM_START);
+            } else {
+                Notification.show(rootCauseMessage("Sender alias sync failed", ex), 5000, Position.BOTTOM_START);
+            }
+        } catch (Exception ex) {
+            log.warn("Gmail sender alias sync failed: projectId={}", selectedProject == null ? null : selectedProject.getId(), ex);
+            Notification.show(rootCauseMessage("Sender alias sync failed", ex), 5000, Position.BOTTOM_START);
         }
     }
 
@@ -1087,8 +1736,8 @@ public class ProjectAdminView extends Composite<Div> {
         return selectedProject.getGmailAppPassword();
     }
 
-    private boolean hasEffectiveCredential(String value, String appDefault) {
-        return blankToNull(value) != null || blankToNull(appDefault) != null;
+    private boolean hasProjectCredential(String value) {
+        return blankToNull(value) != null;
     }
 
     private String required(TextField field, String label) {
@@ -1128,6 +1777,11 @@ public class ProjectAdminView extends Composite<Div> {
 
     private String value(Object value) {
         return value == null ? "" : value.toString();
+    }
+
+    private String first(Map<String, List<String>> parameters, String key) {
+        List<String> values = parameters.get(key);
+        return values == null || values.isEmpty() ? null : values.get(0);
     }
 
     private String rootCauseMessage(String prefix, Exception ex) {

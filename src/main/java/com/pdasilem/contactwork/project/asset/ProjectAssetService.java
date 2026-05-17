@@ -67,15 +67,34 @@ public class ProjectAssetService {
                 projectId, ProjectAssetType.LETTER_TEMPLATE);
     }
 
+    public ProjectAsset activeLetterOrThrow(UUID projectId) {
+        return activeLetter(projectId)
+                .orElseThrow(() -> new IllegalStateException("Project has no active letter template"));
+    }
+
     public List<ProjectAsset> activeAttachments(UUID projectId) {
         return projectAssetRepository.findByProjectIdAndTypeAndActiveTrueOrderByCreatedAtAsc(
                 projectId, ProjectAssetType.ATTACHMENT);
     }
 
     public Resource activeLetterResource(UUID projectId) {
-        ProjectAsset asset = activeLetter(projectId)
-                .orElseThrow(() -> new IllegalStateException("Project has no active letter template"));
+        ProjectAsset asset = activeLetterOrThrow(projectId);
         return new PathResource(Path.of(asset.getStoredPath()));
+    }
+
+    @Transactional
+    public ProjectAsset overwriteActiveLetter(UUID projectId, byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
+            throw new IllegalArgumentException("Updated letter template is empty");
+        }
+        ProjectAsset asset = activeLetterOrThrow(projectId);
+        try {
+            Files.write(Path.of(asset.getStoredPath()), bytes);
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to overwrite active letter template", ex);
+        }
+        asset.setSizeBytes(bytes.length);
+        return projectAssetRepository.save(asset);
     }
 
     public List<MailAttachment> activeMailAttachments(UUID projectId) {

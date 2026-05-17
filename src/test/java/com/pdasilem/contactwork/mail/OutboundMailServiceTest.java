@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.icegreen.greenmail.junit5.GreenMailExtension;
 import com.icegreen.greenmail.util.ServerSetupTest;
-import com.pdasilem.contactwork.config.AppProperties;
 import com.pdasilem.contactwork.contact.Contact;
 import com.pdasilem.contactwork.contact.ContactStatus;
 import com.pdasilem.contactwork.history.ContactMessageService;
@@ -45,21 +44,8 @@ class OutboundMailServiceTest {
         Properties javaMailProperties = sender.getJavaMailProperties();
         javaMailProperties.put("mail.smtp.auth", "false");
 
-        AppProperties properties = new AppProperties(
-                new AppProperties.Resources("classpath:data/Letter.docx", tempDir.toString()),
-                new AppProperties.Mail(
-                        "Outbound Test",
-                        "Body line",
-                        "letter.pdf",
-                        "sender@localhost",
-                        0,
-                        "0 */5 * * * *",
-                        new AppProperties.Gmail("", "")
-                )
-        );
-
         ContactMessageService contactMessageService = Mockito.mock(ContactMessageService.class);
-        OutboundMailService service = new OutboundMailService(sender, properties, contactMessageService);
+        OutboundMailService service = new OutboundMailService(contactMessageService, project -> sender);
 
         Path letterDocx = Files.createFile(tempDir.resolve("letter.docx"));
         Path letterPdf = Files.createFile(tempDir.resolve("letter.pdf"));
@@ -125,21 +111,8 @@ class OutboundMailServiceTest {
         Properties javaMailProperties = sender.getJavaMailProperties();
         javaMailProperties.put("mail.smtp.auth", "false");
 
-        AppProperties properties = new AppProperties(
-                new AppProperties.Resources("classpath:data/Letter.docx", tempDir.toString()),
-                new AppProperties.Mail(
-                        "Outbound Test",
-                        "Body line",
-                        "letter.pdf",
-                        "sender@localhost",
-                        0,
-                        "0 */5 * * * *",
-                        new AppProperties.Gmail("", "")
-                )
-        );
-
         ContactMessageService contactMessageService = Mockito.mock(ContactMessageService.class);
-        OutboundMailService service = new OutboundMailService(sender, properties, contactMessageService);
+        OutboundMailService service = new OutboundMailService(contactMessageService, project -> sender);
 
         Path letterDocx = Files.createFile(tempDir.resolve("letter-with-name.docx"));
         Path letterPdf = Files.createFile(tempDir.resolve("letter-with-name.pdf"));

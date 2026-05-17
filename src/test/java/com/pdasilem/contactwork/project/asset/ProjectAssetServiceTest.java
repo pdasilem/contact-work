@@ -129,6 +129,25 @@ class ProjectAssetServiceTest {
         verify(projectAssetRepository, never()).delete(any(ProjectAsset.class));
     }
 
+    @Test
+    void overwriteActiveLetterUpdatesSameAssetAndStoredFile() throws Exception {
+        Project project = project();
+        ProjectAsset asset = asset(project, ProjectAssetType.LETTER_TEMPLATE, "letter.docx", "old");
+        ProjectAssetService service = new ProjectAssetService(projectAssetRepository, projectService, appProperties());
+        when(projectAssetRepository.findFirstByProjectIdAndTypeAndActiveTrueOrderByCreatedAtDesc(
+                project.getId(), ProjectAssetType.LETTER_TEMPLATE)).thenReturn(Optional.of(asset));
+        when(projectAssetRepository.save(any(ProjectAsset.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        ProjectAsset updated = service.overwriteActiveLetter(project.getId(), "updated".getBytes(StandardCharsets.UTF_8));
+
+        assertThat(updated).isSameAs(asset);
+        assertThat(updated.getStoredPath()).isEqualTo(asset.getStoredPath());
+        assertThat(updated.getSizeBytes()).isEqualTo(7);
+        assertThat(Files.readString(Path.of(asset.getStoredPath()))).isEqualTo("updated");
+        verify(projectAssetRepository, never()).delete(any(ProjectAsset.class));
+    }
+
     private Project project() {
         Project project = new Project();
         project.setId(Project.DEFAULT_PROJECT_ID);
@@ -153,16 +172,9 @@ class ProjectAssetServiceTest {
 
     private AppProperties appProperties() {
         return new AppProperties(
-                new AppProperties.Resources("classpath:data/Letter.docx", tempDir.toString()),
-                new AppProperties.Mail(
-                        "Subject",
-                        "Body",
-                        "letter.pdf",
-                        "sender@example.com",
-                        1000,
-                        "0 */5 * * * *",
-                        new AppProperties.Gmail("user@example.com", "password")
-                )
+                new AppProperties.Resources(tempDir.toString()),
+                new AppProperties.Mail(1000, "0 */5 * * * *", null),
+                null
         );
     }
 }

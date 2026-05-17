@@ -9,38 +9,42 @@ import org.springframework.validation.annotation.Validated;
 @ConfigurationProperties(prefix = "app")
 public record AppProperties(
         @NotNull Resources resources,
-        @NotNull Mail mail
+        @NotNull Mail mail,
+        Ai ai
 ) {
+    public AppProperties {
+        if (ai == null) {
+            ai = new Ai(null);
+        }
+    }
 
     public record Resources(
-            @NotBlank String letterTemplate,
             @NotBlank String workingDir
     ) {
     }
 
     public record Mail(
-            @NotBlank String subject,
-            @NotBlank String body,
-            @NotBlank String letterAttachmentFilename,
-            String from,
             long sendDelayMs,
             @NotBlank String inboxSyncCron,
-            @NotNull Gmail gmail
+            Gmail gmail
     ) {
     }
 
     public record Gmail(
-            String username,
-            String appPassword,
+            String inboxFolder,
+            String sentFolder,
+            String spamFolder,
             OAuth oauth
     ) {
-        public Gmail(String username, String appPassword) {
-            this(username, appPassword, new OAuth(null, null, null));
-        }
-
         public Gmail {
-            if (oauth == null) {
-                oauth = new OAuth(null, null, null);
+            if (inboxFolder == null || inboxFolder.isBlank()) {
+                inboxFolder = "INBOX";
+            }
+            if (sentFolder == null || sentFolder.isBlank()) {
+                sentFolder = "[Gmail]/Sent Mail";
+            }
+            if (spamFolder == null || spamFolder.isBlank()) {
+                spamFolder = "[Gmail]/Spam";
             }
         }
     }
@@ -50,5 +54,30 @@ public record AppProperties(
             String clientSecret,
             String redirectUri
     ) {
+    }
+
+    public record Ai(
+            Brave brave
+    ) {
+        public Ai {
+            if (brave == null) {
+                brave = new Brave("", "https://api.search.brave.com/res/v1/web/search", 5);
+            }
+        }
+    }
+
+    public record Brave(
+            String apiKey,
+            String webSearchUrl,
+            int count
+    ) {
+        public Brave {
+            if (webSearchUrl == null || webSearchUrl.isBlank()) {
+                webSearchUrl = "https://api.search.brave.com/res/v1/web/search";
+            }
+            if (count <= 0) {
+                count = 5;
+            }
+        }
     }
 }

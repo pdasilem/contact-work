@@ -14,7 +14,17 @@ create table projects (
     inbox_sync_cron text not null,
     gmail_username text,
     gmail_app_password text,
+    ai_system_prompt text,
+    last_mail_sync_at timestamptz,
     created_at timestamptz not null,
+    updated_at timestamptz not null
+);
+
+create table app_ai_settings (
+    id integer primary key,
+    provider varchar(32) not null,
+    model text not null,
+    temperature double precision not null,
     updated_at timestamptz not null
 );
 
@@ -65,6 +75,69 @@ create table mail_sync_state (
     updated_at timestamptz not null,
     constraint fk_mail_sync_state_project
         foreign key (project_id) references projects(id) on delete cascade
+);
+
+create table mailbox_messages (
+    id uuid primary key,
+    project_id uuid not null,
+    contact_id uuid not null,
+    folder varchar(16) not null,
+    direction varchar(16) not null,
+    service_date timestamptz not null,
+    normalized_message_id text,
+    sender_email text,
+    recipient_emails text,
+    cc_emails text,
+    subject text,
+    body_text text,
+    content_hash text not null,
+    created_at timestamptz not null,
+    constraint fk_mailbox_messages_project
+        foreign key (project_id) references projects(id) on delete cascade,
+    constraint fk_mailbox_messages_contact
+        foreign key (contact_id) references contacts(id) on delete cascade
+);
+
+create table contact_conversation_summaries (
+    id uuid primary key,
+    contact_id uuid not null,
+    summary_text text not null,
+    provider varchar(32),
+    model text not null,
+    generated_at timestamptz not null,
+    updated_at timestamptz not null,
+    constraint fk_contact_conversation_summaries_contact
+        foreign key (contact_id) references contacts(id) on delete cascade
+);
+
+create table ai_chat_sessions (
+    id uuid primary key,
+    scope varchar(16) not null,
+    project_id uuid,
+    contact_id uuid,
+    title text,
+    provider varchar(32),
+    model text not null,
+    archived_at timestamptz,
+    summary text,
+    created_at timestamptz not null,
+    updated_at timestamptz not null,
+    constraint fk_ai_chat_sessions_project
+        foreign key (project_id) references projects(id) on delete cascade,
+    constraint fk_ai_chat_sessions_contact
+        foreign key (contact_id) references contacts(id) on delete cascade
+);
+
+create table ai_chat_messages (
+    id uuid primary key,
+    session_id uuid not null,
+    role varchar(16) not null,
+    content text not null,
+    provider varchar(32),
+    model text,
+    created_at timestamptz not null,
+    constraint fk_ai_chat_messages_session
+        foreign key (session_id) references ai_chat_sessions(id) on delete cascade
 );
 
 create table project_assets (
@@ -129,6 +202,29 @@ create unique index uq_contact_messages_message_id
 
 create index idx_contact_messages_project_contact_timestamp
     on contact_messages(project_id, contact_id, message_timestamp desc);
+
+create unique index uq_mailbox_messages_project_message_id
+    on mailbox_messages(project_id, normalized_message_id)
+    where normalized_message_id is not null;
+
+create unique index uq_mailbox_messages_project_content_hash
+    on mailbox_messages(project_id, content_hash)
+    where normalized_message_id is null;
+
+create index idx_mailbox_messages_project_contact_service_date
+    on mailbox_messages(project_id, contact_id, service_date asc);
+
+create unique index uq_contact_conversation_summaries_contact
+    on contact_conversation_summaries(contact_id);
+
+create index idx_ai_chat_sessions_scope_project
+    on ai_chat_sessions(scope, project_id, updated_at desc);
+
+create index idx_ai_chat_sessions_scope_contact
+    on ai_chat_sessions(scope, contact_id, updated_at desc);
+
+create index idx_ai_chat_messages_session_created
+    on ai_chat_messages(session_id, created_at asc);
 
 create index idx_project_assets_project_type_active_created
     on project_assets(project_id, type, active, created_at);

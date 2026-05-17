@@ -4,9 +4,23 @@ server:
 spring:
   application:
     name: ContactWork
+  ai:
+    ollama:
+      base-url: http://localhost:11434
+      chat:
+        options:
+          model: ${LOCAL_AI_MODEL:gemma4:e2b}
+          keep_alive: 30m
+    google:
+      genai:
+        api-key: ${GOOGLE_API_KEY:}
+        chat:
+          options:
+            model: ${GOOGLE_GENAI_MODEL:gemini-2.0-flash}
+            temperature: ${GOOGLE_GENAI_TEMPERATURE:0.2}
   servlet:
     multipart:
-      max-file-size: 25MB
+      max-file-size: 10MB
       max-request-size: 30MB
   datasource:
     url: jdbc:postgresql://postgres:5432/contactwork
@@ -25,21 +39,25 @@ spring:
     locations: classpath:db/migration
 
 app:
+  ai:
+    brave:
+      api-key: ${BRAVE_SEARCH_API_KEY:}
+      web-search-url: https://api.search.brave.com/res/v1/web/search
+      count: 5
   resources:
-    letter-template: classpath:data/Letter.docx
     working-dir: /tmp/contactwork/generated
+  onlyoffice:
+    public-base-url: ${ONLYOFFICE_PUBLIC_BASE_URL:http://127.0.0.1:8084}
+    document-base-url: ${ONLYOFFICE_DOCUMENT_BASE_URL:http://app:8083}
+    internal-download-base-url: ${ONLYOFFICE_INTERNAL_DOWNLOAD_BASE_URL:http://onlyoffice}
   mail:
-    subject: 'Partnership Opportunity: Preclinical Validation of Patented Nano-cartilage Tech'
-    body: |-
-      Please find attached a consortium proposal for EIC Pathfinder 2026 regarding preclinical validation of our patented Nano-cartilage technology. We are seeking a lead research partner for TRL 4/5 and have included a detailed letter and scientific pitch deck for your review.
-    letter-attachment-filename: Consortium_Proposal.pdf
-    from: ${APP_MAIL_FROM}
     send-delay-ms: 3000
     inbox-sync-cron: "0 */30 * * * *"
     gmail:
-      username: ${GMAIL_USERNAME}
-      app-password: ${GMAIL_APP_PASSWORD}
+      inbox-folder: ${GMAIL_INBOX_FOLDER:INBOX}
+      sent-folder: ${GMAIL_SENT_FOLDER:[Gmail]/Sent Mail}
+      spam-folder: ${GMAIL_SPAM_FOLDER:[Gmail]/Spam}
       oauth:
-    client-id: ${GOOGLE_OAUTH_CLIENT_ID:}
-    client-secret: ${GOOGLE_OAUTH_CLIENT_SECRET:}
-    redirect-uri: ${GOOGLE_OAUTH_REDIRECT_URI:}
+        client-id: ${GOOGLE_CLIENT_ID:}
+        client-secret: ${GOOGLE_CLIENT_SECRET:}
+        redirect-uri: ${GOOGLE_REDIRECT_URI:}

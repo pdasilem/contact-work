@@ -17,19 +17,44 @@ services:
 
   onlyoffice:
     build:
-      context: .
-      dockerfile: deploy/onlyoffice/Dockerfile
+      context: deploy/onlyoffice
+      dockerfile: Dockerfile
     environment:
       JWT_ENABLED: "false"
       ALLOW_PRIVATE_IP_ADDRESS: "true"
       ALLOW_META_IP_ADDRESS: "true"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:8084:80"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost/healthcheck >/dev/null || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 20
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - contactwork_ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  ollama-pull:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      LOCAL_AI_MODEL: ${LOCAL_AI_MODEL:-gemma4:e2b}
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["ollama pull \"${LOCAL_AI_MODEL:-gemma4:e2b}\""]
 
   app:
     build:
@@ -37,13 +62,22 @@ services:
       dockerfile: Dockerfile
     env_file:
       - .env
+    environment:
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      SPRING_AI_OLLAMA_BASE_URL: http://ollama:11434
+      LOCAL_AI_MODEL: ${LOCAL_AI_MODEL:-gemma4:e2b}
     depends_on:
       postgres:
         condition: service_healthy
       onlyoffice:
         condition: service_healthy
+      ollama-pull:
+        condition: service_completed_successfully
     ports:
-      - "8083:8083"
+      - "127.0.0.1:8083:8083"
 
 volumes:
   contactwork_postgres_data:
+    name: contactwork_postgres_data
+  contactwork_ollama_data:
+    name: contactwork_ollama_data
