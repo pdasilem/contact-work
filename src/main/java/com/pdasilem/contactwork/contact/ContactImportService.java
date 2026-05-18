@@ -113,7 +113,7 @@ public class ContactImportService {
                 contact.setNote(trimToNull(valueAt(row, columns.get("note"))));
                 contact.setStatus(ContactStatus.NEW);
                 contactRepository.save(contact);
-                saveCustomFields(project, contact, header, columns, row);
+                saveCustomFields(project, contact, header, row);
                 inserted++;
             }
         } catch (IOException ex) {
@@ -155,7 +155,7 @@ public class ContactImportService {
         return index;
     }
 
-    private void saveCustomFields(Project project, Contact contact, String[] header, Map<String, Integer> columns, String[] row) {
+    private void saveCustomFields(Project project, Contact contact, String[] header, String[] row) {
         for (int index = 0; index < header.length; index++) {
             String key = standardKey(header[index]);
             if (isStandard(key)) {

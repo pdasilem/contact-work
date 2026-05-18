@@ -33,17 +33,23 @@ Containers:
 
 - `app`: ContactWork API and Vaadin UI
 - `postgres`: PostgreSQL database
-- `onlyoffice`: internal PDF conversion service
+- `onlyoffice`: ONLYOFFICE Document Server for PDF conversion and DOCX editing
 - `ollama`: local AI model runtime
 - `ollama-pull`: one-shot model download before `app` starts
 
-Published host ports:
+Local host bindings:
 
 - `8083`: ContactWork API and Vaadin UI
 - `5436`: PostgreSQL
 - `11434`: Ollama API
+- `8084`: ONLYOFFICE Document Server
 
-`ONLYOFFICE` is internal-only and is not exposed on the host.
+All Compose host ports are bound to `127.0.0.1`. On a VPS, public traffic should reach the app through a reverse proxy:
+
+- `https://app.<DOMAIN>` -> `http://127.0.0.1:8083`
+- `https://docs.<DOMAIN>` -> `http://127.0.0.1:8084`
+
+The browser-facing ONLYOFFICE editor loads from the public docs subdomain, while server-to-server document and callback traffic stays on the Docker network.
 
 ## Configuration
 
@@ -69,6 +75,18 @@ Optional AI variables:
 - `GOOGLE_API_KEY`, required only when using the Google GenAI provider profile
 - `GOOGLE_GENAI_MODEL`, default `gemini-2.0-flash`
 - `GOOGLE_GENAI_TEMPERATURE`, default `0.2`
+
+Google OAuth variables for Gmail sender alias sync:
+
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `GOOGLE_REDIRECT_URI`, for VPS use `https://app.<DOMAIN>/callback`
+
+ONLYOFFICE variables:
+
+- `ONLYOFFICE_PUBLIC_BASE_URL`, for VPS use `https://docs.<DOMAIN>`
+- `ONLYOFFICE_DOCUMENT_BASE_URL`, for Compose use `http://app:8083`
+- `ONLYOFFICE_INTERNAL_DOWNLOAD_BASE_URL`, for Compose use `http://onlyoffice`
 
 On first `docker compose up`, `ollama-pull` downloads the configured local model into the `contactwork_ollama_data` volume before `app` starts.
 
@@ -97,7 +115,11 @@ Project-specific settings include:
 http://localhost:8083
 ```
 
-For a remote deployment, replace `localhost` with the server host or IP address.
+For VPS use:
+
+```text
+https://app.<DOMAIN>
+```
 
 ## Web Interface
 

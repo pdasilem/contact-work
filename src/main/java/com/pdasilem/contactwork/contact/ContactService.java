@@ -117,11 +117,6 @@ public class ContactService {
         return contactRepository.save(contact);
     }
 
-    public Contact findByEmail(UUID projectId, String email) {
-        return contactRepository.findByProjectIdAndEmail(projectId, email)
-                .orElseThrow(() -> new IllegalArgumentException("Contact not found by email in project " + projectId + ": " + email));
-    }
-
     public long countByStatus(UUID projectId, ContactStatus status) {
         return contactRepository.countByProjectIdAndStatusAndDeletedAtIsNull(projectId, status);
     }

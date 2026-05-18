@@ -3,10 +3,10 @@ services:
     image: postgres:17
     environment:
       POSTGRES_DB: contactwork
-      POSTGRES_USER: contactwork
-      POSTGRES_PASSWORD: contactwork
+      POSTGRES_USER: ${SPRING_DATASOURCE_USERNAME:-contactwork}
+      POSTGRES_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-contactwork}
     ports:
-      - "5436:5432"
+      - "127.0.0.1:5436:5432"
     volumes:
       - contactwork_postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -36,7 +36,7 @@ services:
   ollama:
     image: ollama/ollama:latest
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"
     volumes:
       - contactwork_ollama_data:/root/.ollama
     healthcheck:

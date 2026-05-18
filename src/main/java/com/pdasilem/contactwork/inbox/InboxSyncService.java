@@ -86,17 +86,29 @@ public class InboxSyncService {
     @Transactional
     public void syncInbox(UUID projectId) {
         Project project = projectService.getProject(projectId);
+        syncInbox(project, null, project.getLastMailSyncAt(), true);
+    }
+
+    @Transactional
+    public void syncInbox(UUID projectId, UUID contactId) {
+        Project project = projectService.getProject(projectId);
+        Contact contact = contactRepository.findByProjectIdAndId(projectId, contactId)
+                .orElseThrow(() -> new IllegalArgumentException("Contact not found in project " + projectId + ": " + contactId));
+        syncInbox(project, contact, null, false);
+    }
+
+    private void syncInbox(Project project, Contact scopedContact, OffsetDateTime lastSyncAt, boolean markProjectSynced) {
+        UUID projectId = project.getId();
         if (!isConfigured(project)) {
             throw new IllegalStateException("Project Gmail credentials are required before syncing");
         }
 
         String username = resolvedGmailUsername(project);
-        OffsetDateTime lastSyncAt = project.getLastMailSyncAt();
-        Map<String, Contact> contactsByEmail = contactRepository.findByProjectIdAndDeletedAtIsNull(projectId).stream()
-                .collect(Collectors.toMap(contact -> EmailUtils.normalize(contact.getEmail()), Function.identity()));
+        Map<String, Contact> contactsByEmail = contactsByEmail(projectId, scopedContact);
         TreeSet<FetchedMailboxMessage> fetched = new TreeSet<>(mailboxOrdering());
 
-        log.info("Starting mailbox sync for project {} mailbox {} incrementalAfter={}", projectId, username, lastSyncAt);
+        log.info("Starting mailbox sync for project {} contactId={} mailbox {} incrementalAfter={}",
+                projectId, scopedContact == null ? null : scopedContact.getId(), username, lastSyncAt);
         try (Store store = createImapStore(project)) {
             for (FolderSpec folderSpec : folderSpecs()) {
                 scanFolder(store, folderSpec, project, contactsByEmail, lastSyncAt, fetched);
@@ -118,15 +130,18 @@ public class InboxSyncService {
         }
 
         OffsetDateTime syncCompletedAt = OffsetDateTime.now(ZoneOffset.UTC);
-        selectedProjectMarkSynced(projectId, syncCompletedAt);
+        if (markProjectSynced) {
+            selectedProjectMarkSynced(projectId, syncCompletedAt);
+        }
         log.info(
-                "Finished mailbox sync for project {} mailbox {} fetched={} saved={} duplicates={} lastMailSyncAt={}",
+                "Finished mailbox sync for project {} contactId={} mailbox {} fetched={} saved={} duplicates={} lastMailSyncAt={}",
                 projectId,
+                scopedContact == null ? null : scopedContact.getId(),
                 username,
                 fetched.size(),
                 savedCount,
                 skippedDuplicateCount,
-                syncCompletedAt
+                markProjectSynced ? syncCompletedAt : project.getLastMailSyncAt()
         );
     }
 
@@ -159,6 +174,14 @@ public class InboxSyncService {
         }
     }
 
+    Map<String, Contact> contactsByEmail(UUID projectId, Contact scopedContact) {
+        if (scopedContact != null) {
+            return Map.of(EmailUtils.normalize(scopedContact.getEmail()), scopedContact);
+        }
+        return contactRepository.findByProjectIdAndDeletedAtIsNull(projectId).stream()
+                .collect(Collectors.toMap(contact -> EmailUtils.normalize(contact.getEmail()), Function.identity()));
+    }
+
     private Optional<FetchedMailboxMessage> processFetchedMessage(
             Project project,
             Map<String, Contact> contactsByEmail,
@@ -171,11 +194,7 @@ public class InboxSyncService {
         }
 
         AddressSet addresses = addresses(message);
-        List<Contact> matchedContacts = addresses.all().stream()
-                .map(contactsByEmail::get)
-                .filter(Objects::nonNull)
-                .distinct()
-                .toList();
+        List<Contact> matchedContacts = matchedContacts(addresses, contactsByEmail);
         if (matchedContacts.size() != 1) {
             if (matchedContacts.size() > 1) {
                 log.warn("Skipping mailbox message with multiple contact matches: projectId={} subject={}",
@@ -188,7 +207,7 @@ public class InboxSyncService {
         String messageId = firstHeader(message, "Message-ID").map(this::normalizeMessageId).orElse(null);
         String contentHash = contentHash(addresses.sender(), addresses.recipients(), addresses.cc(), message.getSubject(), bodyText);
         return Optional.of(new FetchedMailboxMessage(
-                matchedContacts.get(0),
+                matchedContacts.getFirst(),
                 folder,
                 folder == MailboxFolder.SENT ? MailboxDirection.SENT : MailboxDirection.RECEIVED,
                 serviceDate,
@@ -200,6 +219,14 @@ public class InboxSyncService {
                 bodyText,
                 contentHash
         ));
+    }
+
+    List<Contact> matchedContacts(AddressSet addresses, Map<String, Contact> contactsByEmail) {
+        return addresses.all().stream()
+                .map(address -> contactsByEmail.get(EmailUtils.normalize(address)))
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
     }
 
     private void applyStatusRules(FetchedMailboxMessage message) {
@@ -319,7 +346,7 @@ public class InboxSyncService {
         List<String> from = addressStrings(message.getFrom());
         List<String> to = addressStrings(message.getRecipients(RecipientType.TO));
         List<String> cc = addressStrings(message.getRecipients(RecipientType.CC));
-        return new AddressSet(from.isEmpty() ? null : from.get(0), to, cc);
+        return new AddressSet(from.isEmpty() ? null : from.getFirst(), to, cc);
     }
 
     private List<String> addressStrings(Address[] addresses) {
@@ -495,7 +522,7 @@ public class InboxSyncService {
     private record FolderSpec(MailboxFolder folder, String name) {
     }
 
-    private record AddressSet(String sender, List<String> recipients, List<String> cc) {
+    record AddressSet(String sender, List<String> recipients, List<String> cc) {
         List<String> all() {
             List<String> all = new ArrayList<>();
             if (sender != null) {

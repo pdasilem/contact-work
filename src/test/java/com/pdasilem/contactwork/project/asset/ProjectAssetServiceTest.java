@@ -13,6 +13,7 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -127,6 +128,22 @@ class ProjectAssetServiceTest {
 
         assertThat(Files.readString(Path.of(attachment.getStoredPath()))).isEqualTo("pdf");
         verify(projectAssetRepository, never()).delete(any(ProjectAsset.class));
+    }
+
+    @Test
+    void activeMailAttachmentsSkipsMissingOptionalFilesAndKeepsExistingFiles() throws Exception {
+        Project project = project();
+        ProjectAsset existing = asset(project, ProjectAssetType.ATTACHMENT, "deck.pdf", "pdf");
+        ProjectAsset missing = asset(project, ProjectAssetType.ATTACHMENT, "overview.pdf", "old");
+        Files.delete(Path.of(missing.getStoredPath()));
+        ProjectAssetService service = new ProjectAssetService(projectAssetRepository, projectService, appProperties());
+        when(projectAssetRepository.findByProjectIdAndTypeAndActiveTrueOrderByCreatedAtAsc(
+                project.getId(), ProjectAssetType.ATTACHMENT)).thenReturn(List.of(missing, existing));
+
+        List<MailAttachment> attachments = service.activeMailAttachments(project.getId());
+
+        assertThat(attachments).hasSize(1);
+        assertThat(attachments.get(0).filename()).isEqualTo("deck.pdf");
     }
 
     @Test

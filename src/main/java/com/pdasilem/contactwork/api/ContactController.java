@@ -96,7 +96,7 @@ public class ContactController {
                 "SENT AT"
         );
         builder.append(header);
-        builder.append("-".repeat(header.length() - 1)).append(System.lineSeparator());
+        builder.repeat("-", header.length() - 1).append(System.lineSeparator());
 
         for (ContactResponse contact : contacts) {
             builder.append(String.format(

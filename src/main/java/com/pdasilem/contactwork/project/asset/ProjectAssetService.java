@@ -9,6 +9,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.io.PathResource;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
@@ -16,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ProjectAssetService {
+    private static final Logger log = LoggerFactory.getLogger(ProjectAssetService.class);
 
     private final ProjectAssetRepository projectAssetRepository;
     private final ProjectService projectService;
@@ -99,6 +102,20 @@ public class ProjectAssetService {
 
     public List<MailAttachment> activeMailAttachments(UUID projectId) {
         return activeAttachments(projectId).stream()
+                .filter(asset -> {
+                    Path path = Path.of(asset.getStoredPath());
+                    boolean exists = Files.exists(path);
+                    if (!exists) {
+                        log.warn(
+                                "Skipping missing optional mail attachment: projectId={} assetId={} filename={} path={}",
+                                projectId,
+                                asset.getId(),
+                                asset.getOriginalFilename(),
+                                asset.getStoredPath()
+                        );
+                    }
+                    return exists;
+                })
                 .map(asset -> new MailAttachment(asset.getOriginalFilename(), new PathResource(Path.of(asset.getStoredPath()))))
                 .toList();
     }

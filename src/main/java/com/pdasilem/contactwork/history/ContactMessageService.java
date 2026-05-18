@@ -21,10 +21,6 @@ public class ContactMessageService {
         return contactMessageRepository.findByProjectIdAndContactIdOrderByMessageTimestampAsc(projectId, contactId);
     }
 
-    public boolean existsByMessageId(String messageId) {
-        return messageId != null && contactMessageRepository.findByMessageId(messageId).isPresent();
-    }
-
     @Transactional
     public ContactMessage recordOutbound(
             Project project,
@@ -37,36 +33,6 @@ public class ContactMessageService {
             OffsetDateTime messageTimestamp
     ) {
         return save(project, contact, MessageDirection.OUTBOUND, MessageEventType.EMAIL, messageId, null,
-                senderEmail, recipientEmail, subject, bodyText, messageTimestamp);
-    }
-
-    @Transactional
-    public ContactMessage recordInboundReply(
-            Contact contact,
-            String messageId,
-            String relatedMessageId,
-            String subject,
-            String bodyText,
-            String senderEmail,
-            String recipientEmail,
-            OffsetDateTime messageTimestamp
-    ) {
-        return save(contact.getProject(), contact, MessageDirection.INBOUND, MessageEventType.REPLY, messageId, relatedMessageId,
-                senderEmail, recipientEmail, subject, bodyText, messageTimestamp);
-    }
-
-    @Transactional
-    public ContactMessage recordInboundBounce(
-            Contact contact,
-            String messageId,
-            String relatedMessageId,
-            String subject,
-            String bodyText,
-            String senderEmail,
-            String recipientEmail,
-            OffsetDateTime messageTimestamp
-    ) {
-        return save(contact.getProject(), contact, MessageDirection.INBOUND, MessageEventType.BOUNCE, messageId, relatedMessageId,
                 senderEmail, recipientEmail, subject, bodyText, messageTimestamp);
     }
 

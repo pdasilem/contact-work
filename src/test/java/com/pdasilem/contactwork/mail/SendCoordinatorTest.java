@@ -13,6 +13,7 @@ import com.pdasilem.contactwork.contact.ContactStatus;
 import com.pdasilem.contactwork.project.Project;
 import com.pdasilem.contactwork.project.ProjectService;
 import com.pdasilem.contactwork.project.ProjectStatus;
+import com.pdasilem.contactwork.project.asset.MailAttachment;
 import com.pdasilem.contactwork.project.asset.ProjectAsset;
 import com.pdasilem.contactwork.project.asset.ProjectAssetService;
 import com.pdasilem.contactwork.project.asset.ProjectAssetType;
@@ -130,6 +131,25 @@ class SendCoordinatorTest {
         coordinator.sendSingle(project.getId(), contact.getId(), true);
 
         verify(outboundMailService).send(project, contact, generatedLetter(), List.of());
+        assertThat(contact.getStatus()).isEqualTo(ContactStatus.SENT);
+    }
+
+    @Test
+    void singleSendPassesOptionalAttachmentsReturnedByAssetService() {
+        Project project = activeProject(null);
+        Contact contact = contactWithoutReadableProject(ContactStatus.NEW);
+        MailAttachment attachment = new MailAttachment("overview.pdf", new ByteArrayResource(new byte[0]));
+        SendCoordinator coordinator = coordinator();
+        stubReadinessOnly(project);
+        when(contactRepository.findByProjectIdAndId(project.getId(), contact.getId())).thenReturn(Optional.of(contact));
+        when(projectAssetService.activeLetterResource(project.getId())).thenReturn(new ByteArrayResource(new byte[0]));
+        when(projectAssetService.activeMailAttachments(project.getId())).thenReturn(List.of(attachment));
+        when(templateService.generateLetterPdf(any(), any(), any())).thenReturn(generatedLetter());
+        when(outboundMailService.send(any(), any(), any(), any())).thenReturn("message-id");
+
+        coordinator.sendSingle(project.getId(), contact.getId(), false);
+
+        verify(outboundMailService).send(project, contact, generatedLetter(), List.of(attachment));
         assertThat(contact.getStatus()).isEqualTo(ContactStatus.SENT);
     }
 

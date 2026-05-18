@@ -32,6 +32,7 @@ import com.pdasilem.contactwork.project.ProjectStatus;
 import com.pdasilem.contactwork.project.asset.ProjectAsset;
 import com.pdasilem.contactwork.project.asset.ProjectAssetService;
 import com.pdasilem.contactwork.project.asset.ProjectAssetType;
+import com.vaadin.flow.component.ClientCallable;
 import com.vaadin.flow.component.Composite;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.Html;
@@ -88,6 +89,10 @@ import org.springframework.web.util.HtmlUtils;
 @CssImport("./styles/contactwork-app.css")
 public class ProjectAdminView extends Composite<Div> implements BeforeEnterObserver {
     private static final Logger log = LoggerFactory.getLogger(ProjectAdminView.class);
+    private static final String STORAGE_PROJECT_DRAWER_COLLAPSED = "contactwork.projectDrawerCollapsed";
+    private static final String STORAGE_SETUP_EXPANDED = "contactwork.projectSetupExpanded";
+    private static final String STORAGE_SELECTED_PROJECT_ID = "contactwork.selectedProjectId";
+    private static final String STORAGE_GRID_WIDTH_PREFIX = "contactwork.contactGridWidth.";
 
     private final ProjectService projectService;
     private final ContactService contactService;
@@ -167,6 +172,7 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
         buildShell();
         renderWelcome();
         refreshProjectList();
+        restoreUiStateFromLocalStorage();
     }
 
     @Override
@@ -258,6 +264,7 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
 
     private void toggleProjectDrawer() {
         projectDrawerCollapsed = !projectDrawerCollapsed;
+        persistUiState(STORAGE_PROJECT_DRAWER_COLLAPSED, Boolean.toString(projectDrawerCollapsed));
         refreshProjectList();
     }
 
@@ -307,8 +314,47 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
 
     private void selectProject(UUID projectId) {
         selectedProject = projectService.getProject(projectId);
+        persistUiState(STORAGE_SELECTED_PROJECT_ID, projectId.toString());
         refreshProjectList();
         renderWorkspace();
+    }
+
+    private void restoreUiStateFromLocalStorage() {
+        getElement().executeJs("""
+                const drawer = window.localStorage.getItem($1);
+                const setup = window.localStorage.getItem($2);
+                const projectId = window.localStorage.getItem($3) || '';
+                $0.$server.restoreUiState(drawer || '', setup || '', projectId);
+                """, getElement(), STORAGE_PROJECT_DRAWER_COLLAPSED, STORAGE_SETUP_EXPANDED, STORAGE_SELECTED_PROJECT_ID);
+    }
+
+    @ClientCallable
+    public void restoreUiState(String drawerCollapsedValue, String setupExpandedValue, String selectedProjectIdValue) {
+        if (!drawerCollapsedValue.isBlank()) {
+            projectDrawerCollapsed = Boolean.parseBoolean(drawerCollapsedValue);
+        }
+        if (!setupExpandedValue.isBlank()) {
+            setupExpanded = Boolean.parseBoolean(setupExpandedValue);
+        }
+        UUID restoredProjectId = null;
+        try {
+            restoredProjectId = selectedProjectIdValue.isBlank() ? null : UUID.fromString(selectedProjectIdValue);
+        } catch (IllegalArgumentException ex) {
+            log.warn("Ignoring invalid stored project id {}", selectedProjectIdValue);
+        }
+        UUID finalRestoredProjectId = restoredProjectId;
+        projectService.findAll().stream()
+                .filter(project -> project.getId().equals(finalRestoredProjectId))
+                .findFirst()
+                .ifPresent(project -> selectedProject = projectService.getProject(project.getId()));
+        refreshProjectList();
+        if (selectedProject != null) {
+            renderWorkspace();
+        }
+    }
+
+    private void persistUiState(String key, String value) {
+        UI.getCurrent().getPage().executeJs("window.localStorage.setItem($0, $1)", key, value);
     }
 
     private void renderWorkspace() {
@@ -639,25 +685,52 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
     private void rebuildContactGridColumns() {
         contactsGrid.removeAllColumns();
         configureContactColumns();
-        contactsGrid.addColumn(Contact::getStatus).setHeader("Status").setAutoWidth(true).setFlexGrow(0).setResizable(true);
-        contactsGrid.addColumn(Contact::getSentAt).setHeader("Sent").setAutoWidth(true).setFlexGrow(0).setResizable(true);
+        configureContactColumn(contactsGrid.addColumn(Contact::getStatus), "status:Status", "Status", 0);
+        configureContactColumn(contactsGrid.addColumn(Contact::getSentAt), "sent:Sent", "Sent", 0);
+        contactsGrid.addColumnResizeListener(event -> {
+            Grid.Column<Contact> column = event.getResizedColumn();
+            if (selectedProject == null || column.getKey() == null) {
+                return;
+            }
+            persistUiState(gridWidthStorageKey(column.getKey()), column.getWidth());
+        });
     }
 
     private void configureContactColumns() {
         List<ProjectContactColumn> columns = projectContactColumnService.findVisibleColumns(selectedProject.getId());
         if (columns.isEmpty()) {
-            contactsGrid.addColumn(Contact::getContactName).setHeader("Contact").setAutoWidth(true).setFlexGrow(1).setResizable(true);
-            contactsGrid.addColumn(Contact::getEmail).setHeader("Email").setAutoWidth(true).setFlexGrow(1).setResizable(true);
-            contactsGrid.addColumn(Contact::getOrganizationName).setHeader("Organization").setAutoWidth(true).setFlexGrow(1).setResizable(true);
+            configureContactColumn(contactsGrid.addColumn(Contact::getContactName), "contact:Contact", "Contact", 1);
+            configureContactColumn(contactsGrid.addColumn(Contact::getEmail), "email:Email", "Email", 1);
+            configureContactColumn(contactsGrid.addColumn(Contact::getOrganizationName), "organization:Organization", "Organization", 1);
             return;
         }
         for (ProjectContactColumn column : columns) {
-            contactsGrid.addColumn(contact -> valueForColumn(contact, column))
-                    .setHeader(column.getDisplayLabel())
-                    .setAutoWidth(true)
-                    .setFlexGrow(1)
-                    .setResizable(true);
+            configureContactColumn(
+                    contactsGrid.addColumn(contact -> valueForColumn(contact, column)),
+                    "custom:" + column.getColumnKey() + ":" + column.getDisplayLabel(),
+                    column.getDisplayLabel(),
+                    1
+            );
         }
+    }
+
+    private void configureContactColumn(Grid.Column<Contact> column, String key, String header, int flexGrow) {
+        column.setKey(key)
+                .setHeader(header)
+                .setAutoWidth(true)
+                .setFlexGrow(flexGrow)
+                .setResizable(true);
+        column.getElement().executeJs("""
+                const width = window.localStorage.getItem($0);
+                if (width) {
+                    this.width = width;
+                    this.autoWidth = false;
+                }
+                """, gridWidthStorageKey(key));
+    }
+
+    private String gridWidthStorageKey(String columnKey) {
+        return STORAGE_GRID_WIDTH_PREFIX + selectedProject.getId() + "." + columnKey;
     }
 
     private Div setupSection() {
@@ -691,7 +764,10 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
         setupBody.addClassName("cw-setup-body");
         Details details = new Details(setupSummary(), setupBody);
         details.setOpened(setupExpanded);
-        details.addOpenedChangeListener(event -> setupExpanded = event.isOpened());
+        details.addOpenedChangeListener(event -> {
+            setupExpanded = event.isOpened();
+            persistUiState(STORAGE_SETUP_EXPANDED, Boolean.toString(setupExpanded));
+        });
         section.add(details);
         return section;
     }
@@ -1074,12 +1150,12 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
                 sendCoordinator.sendSingle(selectedProject.getId(), contact.getId(), force);
             }
             refreshContacts();
-            renderWorkspace();
+            updateReadinessState();
             Notification.show("Selected send processed: " + contacts.size(), 2500, Position.BOTTOM_START);
             return true;
         } catch (Exception ex) {
             refreshContacts();
-            renderWorkspace();
+            updateReadinessState();
             String message = rootCauseMessage("Failed to send contact", ex);
             error.setText(message);
             Notification.show(message, 5000, Position.BOTTOM_START);
@@ -1091,10 +1167,12 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
         try {
             sendCoordinator.start(selectedProject.getId());
             refreshContacts();
-            renderWorkspace();
+            updateReadinessState();
             Notification.show("Batch started: " + eligibleBatchCount + " eligible contacts", 2500, Position.BOTTOM_START);
             return true;
         } catch (Exception ex) {
+            refreshContacts();
+            updateReadinessState();
             String message = rootCauseMessage("Failed to start batch", ex);
             error.setText(message);
             Notification.show(message, 5000, Position.BOTTOM_START);
@@ -1280,8 +1358,10 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
             int before = mailboxMessageRepository.findByProjectIdAndContactIdOrderByServiceDateAsc(
                     selectedProject.getId(), contact.getId()).size();
             try {
-                inboxSyncService.syncInbox(selectedProject.getId());
-                renderConversationMessages(messages, contact);
+                inboxSyncService.syncInbox(selectedProject.getId(), contact.getId());
+                Contact refreshed = contactService.getContact(selectedProject.getId(), contact.getId());
+                renderConversationMessages(messages, refreshed);
+                renderSummary(summary, refreshed);
                 refreshContacts();
                 int after = mailboxMessageRepository.findByProjectIdAndContactIdOrderByServiceDateAsc(
                         selectedProject.getId(), contact.getId()).size();
@@ -1525,7 +1605,6 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
                         manualNote.getValue()
                 );
                 refreshContacts();
-                renderWorkspace();
                 dialog.close();
                 Notification.show("Contact saved", 2500, Position.BOTTOM_START);
             } catch (Exception ex) {
@@ -1574,7 +1653,6 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
                         customValues
                 );
                 refreshContacts();
-                renderWorkspace();
                 dialog.close();
                 Notification.show("Contact added", 2500, Position.BOTTOM_START);
             } catch (Exception ex) {
@@ -1634,8 +1712,9 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
     private void runInboxSync() {
         try {
             inboxSyncService.syncInbox(selectedProject.getId());
+            selectedProject = projectService.getProject(selectedProject.getId());
             refreshContacts();
-            renderWorkspace();
+            updateReadinessState();
             Notification.show("Inbox synced", 2500, Position.BOTTOM_START);
         } catch (Exception ex) {
             log.warn("Manual inbox sync failed for project {}", selectedProject.getId(), ex);

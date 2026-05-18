@@ -98,10 +98,6 @@ public class ContactConversationSummary {
         this.model = model;
     }
 
-    public OffsetDateTime getGeneratedAt() {
-        return generatedAt;
-    }
-
     public void setGeneratedAt(OffsetDateTime generatedAt) {
         this.generatedAt = generatedAt;
     }
