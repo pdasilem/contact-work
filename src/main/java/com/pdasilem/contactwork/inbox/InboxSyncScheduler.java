@@ -21,14 +21,14 @@ public class InboxSyncScheduler {
 
     @Scheduled(cron = "${app.mail.inbox-sync-cron}")
     public void scheduledSync() {
-        projectService.findAll().stream()
+        projectService.findAllForSystem().stream()
                 .filter(inboxSyncService::isConfigured)
                 .forEach(this::syncProject);
     }
 
     private void syncProject(Project project) {
         try {
-            inboxSyncService.syncInbox(project.getId());
+            inboxSyncService.syncInboxForSystem(project.getId());
         } catch (Exception ex) {
             log.warn("Scheduled inbox sync failed for project {}", project.getId(), ex);
         }

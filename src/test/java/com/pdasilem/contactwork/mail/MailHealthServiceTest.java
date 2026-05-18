@@ -1,5 +1,6 @@
 package com.pdasilem.contactwork.mail;
 
+import com.pdasilem.contactwork.auth.CurrentUserService;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
@@ -88,7 +89,7 @@ class MailHealthServiceTest {
         private final Project project;
 
         private RecordingProjectService(Project project) {
-            super(projectRepository(), appProperties());
+            super(projectRepository(), appProperties(), org.mockito.Mockito.mock(CurrentUserService.class));
             this.project = project;
         }
 
@@ -134,7 +135,7 @@ class MailHealthServiceTest {
         }
 
         private RecordingOutboundMailService(List<String> events, String failure) {
-            super(null, null);
+            super(null, null, null);
             this.events = events;
             this.failure = failure;
         }

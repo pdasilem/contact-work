@@ -62,12 +62,18 @@ public class ProjectAssetService {
     }
 
     public List<ProjectAsset> activeAssets(UUID projectId) {
-        return projectAssetRepository.findByProjectIdAndActiveTrueOrderByCreatedAtAsc(projectId);
+        projectService.getProject(projectId);
+        return findActiveAssets(projectId);
     }
 
     public java.util.Optional<ProjectAsset> activeLetter(UUID projectId) {
-        return projectAssetRepository.findFirstByProjectIdAndTypeAndActiveTrueOrderByCreatedAtDesc(
-                projectId, ProjectAssetType.LETTER_TEMPLATE);
+        projectService.getProject(projectId);
+        return findActiveLetter(projectId);
+    }
+
+    public java.util.Optional<ProjectAsset> activeLetterForSystem(UUID projectId) {
+        projectService.getProjectForSystem(projectId);
+        return findActiveLetter(projectId);
     }
 
     public ProjectAsset activeLetterOrThrow(UUID projectId) {
@@ -75,13 +81,23 @@ public class ProjectAssetService {
                 .orElseThrow(() -> new IllegalStateException("Project has no active letter template"));
     }
 
+    public ProjectAsset activeLetterOrThrowForSystem(UUID projectId) {
+        return activeLetterForSystem(projectId)
+                .orElseThrow(() -> new IllegalStateException("Project has no active letter template"));
+    }
+
     public List<ProjectAsset> activeAttachments(UUID projectId) {
-        return projectAssetRepository.findByProjectIdAndTypeAndActiveTrueOrderByCreatedAtAsc(
-                projectId, ProjectAssetType.ATTACHMENT);
+        projectService.getProject(projectId);
+        return findActiveAttachments(projectId);
     }
 
     public Resource activeLetterResource(UUID projectId) {
         ProjectAsset asset = activeLetterOrThrow(projectId);
+        return new PathResource(Path.of(asset.getStoredPath()));
+    }
+
+    public Resource activeLetterResourceForSystem(UUID projectId) {
+        ProjectAsset asset = activeLetterOrThrowForSystem(projectId);
         return new PathResource(Path.of(asset.getStoredPath()));
     }
 
@@ -120,8 +136,44 @@ public class ProjectAssetService {
                 .toList();
     }
 
+    public List<MailAttachment> activeMailAttachmentsForSystem(UUID projectId) {
+        projectService.getProjectForSystem(projectId);
+        return findActiveAttachments(projectId).stream()
+                .filter(asset -> {
+                    Path path = Path.of(asset.getStoredPath());
+                    boolean exists = Files.exists(path);
+                    if (!exists) {
+                        log.warn(
+                                "Skipping missing optional mail attachment: projectId={} assetId={} filename={} path={}",
+                                projectId,
+                                asset.getId(),
+                                asset.getOriginalFilename(),
+                                asset.getStoredPath()
+                        );
+                    }
+                    return exists;
+                })
+                .map(asset -> new MailAttachment(asset.getOriginalFilename(), new PathResource(Path.of(asset.getStoredPath()))))
+                .toList();
+    }
+
+    private List<ProjectAsset> findActiveAssets(UUID projectId) {
+        return projectAssetRepository.findByProjectIdAndActiveTrueOrderByCreatedAtAsc(projectId);
+    }
+
+    private java.util.Optional<ProjectAsset> findActiveLetter(UUID projectId) {
+        return projectAssetRepository.findFirstByProjectIdAndTypeAndActiveTrueOrderByCreatedAtDesc(
+                projectId, ProjectAssetType.LETTER_TEMPLATE);
+    }
+
+    private List<ProjectAsset> findActiveAttachments(UUID projectId) {
+        return projectAssetRepository.findByProjectIdAndTypeAndActiveTrueOrderByCreatedAtAsc(
+                projectId, ProjectAssetType.ATTACHMENT);
+    }
+
     @Transactional
     public void delete(UUID projectId, UUID assetId) {
+        projectService.getProject(projectId);
         ProjectAsset asset = projectAssetRepository.findById(assetId)
                 .orElseThrow(() -> new IllegalArgumentException("Project asset not found: " + assetId));
         delete(projectId, asset);

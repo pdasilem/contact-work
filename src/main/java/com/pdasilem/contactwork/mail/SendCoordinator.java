@@ -65,7 +65,7 @@ public class SendCoordinator {
 
     private void runSendLoop(UUID projectId) {
         try {
-            Project project = projectService.getProject(projectId);
+            Project project = projectService.getProjectForSystem(projectId);
             List<Contact> contacts = contactRepository.findByProjectIdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(projectId, ContactStatus.NEW);
             Integer maxMessagesPerBatch = project.getMaxMessagesPerBatch();
             if (maxMessagesPerBatch != null) {
@@ -74,7 +74,7 @@ public class SendCoordinator {
                         .toList();
             }
             for (Contact contact : contacts) {
-                contactSendProcessor.processContact(projectId, contact.getId(), false);
+                contactSendProcessor.processContactForSystem(projectId, contact.getId(), false);
                 sleepDelay(project);
             }
         } finally {

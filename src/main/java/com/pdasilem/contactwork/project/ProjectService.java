@@ -1,5 +1,6 @@
 package com.pdasilem.contactwork.project;
 
+import com.pdasilem.contactwork.auth.CurrentUserService;
 import com.pdasilem.contactwork.config.AppProperties;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -14,26 +15,50 @@ public class ProjectService {
             """.trim();
     private final ProjectRepository projectRepository;
     private final AppProperties appProperties;
+    private final CurrentUserService currentUserService;
 
     public ProjectService(
             ProjectRepository projectRepository,
-            AppProperties appProperties
+            AppProperties appProperties,
+            CurrentUserService currentUserService
     ) {
         this.projectRepository = projectRepository;
         this.appProperties = appProperties;
+        this.currentUserService = currentUserService;
     }
 
     public List<Project> findAll() {
-        return projectRepository.findAllByOrderByCreatedAtAsc();
+        return currentUserService.filterVisibleProjects(projectRepository.findAllByOrderByCreatedAtAsc());
+    }
+
+    public List<Project> findAllForAdmin() {
+        currentUserService.requireAdmin();
+        return findAllUnrestricted();
+    }
+
+    public List<Project> findAllForSystem() {
+        return findAllUnrestricted();
     }
 
     public Project getProject(UUID projectId) {
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new IllegalArgumentException("Project not found: " + projectId));
+        currentUserService.requireProjectAccess(project);
+        return project;
+    }
+
+    public Project getProjectForSystem(UUID projectId) {
         return projectRepository.findById(projectId)
                 .orElseThrow(() -> new IllegalArgumentException("Project not found: " + projectId));
     }
 
+    public boolean canCurrentUserAccess(UUID projectId) {
+        return currentUserService.canAccessProjectId(projectId);
+    }
+
     @Transactional
     public Project create(Project project) {
+        currentUserService.requireAdmin();
         applyDefaults(project);
         return projectRepository.save(project);
     }
@@ -90,6 +115,13 @@ public class ProjectService {
     }
 
     @Transactional
+    public Project markMailSyncedForSystem(UUID projectId, OffsetDateTime syncedAt) {
+        Project project = getProjectForSystem(projectId);
+        project.setLastMailSyncAt(syncedAt);
+        return projectRepository.save(project);
+    }
+
+    @Transactional
     public Project updateAiSystemPrompt(UUID projectId, String aiSystemPrompt) {
         Project project = getProject(projectId);
         project.setAiSystemPrompt(resolveAiSystemPrompt(aiSystemPrompt));
@@ -125,4 +157,7 @@ public class ProjectService {
         return aiSystemPrompt.trim();
     }
 
+    private List<Project> findAllUnrestricted() {
+        return projectRepository.findAllByOrderByCreatedAtAsc();
+    }
 }

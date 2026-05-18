@@ -1,8 +1,10 @@
 package com.pdasilem.contactwork.project;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.pdasilem.contactwork.auth.CurrentUserService;
 import com.pdasilem.contactwork.config.AppProperties;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -182,6 +184,6 @@ class ProjectTest {
     }
 
     private ProjectService service(AppProperties appProperties) {
-        return new ProjectService(projectRepository, appProperties);
+        return new ProjectService(projectRepository, appProperties, mock(CurrentUserService.class));
     }
 }

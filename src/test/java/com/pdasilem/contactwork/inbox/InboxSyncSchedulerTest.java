@@ -27,14 +27,14 @@ class InboxSyncSchedulerTest {
         Project configured = project(UUID.randomUUID());
         Project unconfigured = project(UUID.randomUUID());
         InboxSyncScheduler scheduler = new InboxSyncScheduler(projectService, inboxSyncService);
-        when(projectService.findAll()).thenReturn(List.of(configured, unconfigured));
+        when(projectService.findAllForSystem()).thenReturn(List.of(configured, unconfigured));
         when(inboxSyncService.isConfigured(configured)).thenReturn(true);
         when(inboxSyncService.isConfigured(unconfigured)).thenReturn(false);
 
         scheduler.scheduledSync();
 
-        verify(inboxSyncService).syncInbox(configured.getId());
-        verify(inboxSyncService, never()).syncInbox(unconfigured.getId());
+        verify(inboxSyncService).syncInboxForSystem(configured.getId());
+        verify(inboxSyncService, never()).syncInboxForSystem(unconfigured.getId());
     }
 
     private Project project(UUID id) {

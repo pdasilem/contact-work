@@ -43,9 +43,18 @@ public class ContactSendProcessor {
 
     @Transactional
     public void processContact(UUID projectId, UUID contactId, boolean force) {
+        processContact(projectId, contactId, force, false);
+    }
+
+    @Transactional
+    public void processContactForSystem(UUID projectId, UUID contactId, boolean force) {
+        processContact(projectId, contactId, force, true);
+    }
+
+    private void processContact(UUID projectId, UUID contactId, boolean force, boolean systemAccess) {
         Contact contact = contactRepository.findByProjectIdAndId(projectId, contactId)
                 .orElseThrow(() -> new IllegalArgumentException("Contact not found in project " + projectId + ": " + contactId));
-        Project project = requireActiveProject(projectId);
+        Project project = requireActiveProject(projectId, systemAccess);
         if (!force && contact.getStatus() != ContactStatus.NEW && contact.getStatus() != ContactStatus.SEND_FAILED) {
             return;
         }
@@ -60,7 +69,9 @@ public class ContactSendProcessor {
             log.info("Generating PDF for contact {}", contactId);
             var generatedLetter = templateService.generateLetterPdf(
                     project,
-                    projectAssetService.activeLetterResource(projectId),
+                    systemAccess
+                            ? projectAssetService.activeLetterResourceForSystem(projectId)
+                            : projectAssetService.activeLetterResource(projectId),
                     contact.getContactName()
             );
             log.info("Generated PDF for contact {}", contactId);
@@ -70,7 +81,9 @@ public class ContactSendProcessor {
                     project,
                     contact,
                     generatedLetter,
-                    projectAssetService.activeMailAttachments(projectId)
+                    systemAccess
+                            ? projectAssetService.activeMailAttachmentsForSystem(projectId)
+                            : projectAssetService.activeMailAttachments(projectId)
             );
             log.info("Sent SMTP message for contact {} messageId={}", contactId, messageId);
 
@@ -120,7 +133,11 @@ public class ContactSendProcessor {
     }
 
     private Project requireActiveProject(UUID projectId) {
-        Project project = projectService.getProject(projectId);
+        return requireActiveProject(projectId, false);
+    }
+
+    private Project requireActiveProject(UUID projectId, boolean systemAccess) {
+        Project project = systemAccess ? projectService.getProjectForSystem(projectId) : projectService.getProject(projectId);
         if (project.getStatus() != ProjectStatus.ACTIVE) {
             throw new IllegalStateException("Only ACTIVE projects may send email");
         }
@@ -134,8 +151,13 @@ public class ContactSendProcessor {
                 || project.getGmailAppPassword() == null || project.getGmailAppPassword().isBlank()) {
             throw new IllegalStateException("Project Gmail credentials are required before sending");
         }
-        projectAssetService.activeLetter(projectId)
-                .orElseThrow(() -> new IllegalStateException("Project has no active letter template"));
+        if (systemAccess) {
+            projectAssetService.activeLetterForSystem(projectId)
+                    .orElseThrow(() -> new IllegalStateException("Project has no active letter template"));
+        } else {
+            projectAssetService.activeLetter(projectId)
+                    .orElseThrow(() -> new IllegalStateException("Project has no active letter template"));
+        }
         return project;
     }
 }

@@ -1,11 +1,17 @@
 package com.pdasilem.contactwork.mail;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.icegreen.greenmail.junit5.GreenMailExtension;
 import com.icegreen.greenmail.util.ServerSetupTest;
 import com.pdasilem.contactwork.contact.Contact;
+import com.pdasilem.contactwork.contact.ContactColumnSource;
+import com.pdasilem.contactwork.contact.ContactCustomField;
+import com.pdasilem.contactwork.contact.ContactCustomFieldRepository;
 import com.pdasilem.contactwork.contact.ContactStatus;
+import com.pdasilem.contactwork.contact.ProjectContactColumn;
+import com.pdasilem.contactwork.contact.ProjectContactColumnRepository;
 import com.pdasilem.contactwork.history.ContactMessageService;
 import com.pdasilem.contactwork.project.Project;
 import com.pdasilem.contactwork.project.asset.MailAttachment;
@@ -45,7 +51,11 @@ class OutboundMailServiceTest {
         javaMailProperties.put("mail.smtp.auth", "false");
 
         ContactMessageService contactMessageService = Mockito.mock(ContactMessageService.class);
-        OutboundMailService service = new OutboundMailService(contactMessageService, project -> sender);
+        OutboundMailService service = new OutboundMailService(
+                contactMessageService,
+                project -> sender,
+                mailTemplateRenderer(List.of(), List.of())
+        );
 
         Path letterDocx = Files.createFile(tempDir.resolve("letter.docx"));
         Path letterPdf = Files.createFile(tempDir.resolve("letter.pdf"));
@@ -64,7 +74,7 @@ class OutboundMailServiceTest {
         Project project = new Project();
         project.setId(Project.DEFAULT_PROJECT_ID);
         project.setName("Default Project");
-        project.setMailSubject("Outbound Test");
+        project.setMailSubject("Attention to {Contact}");
         project.setMailBody("Body line");
         project.setMailFrom("sender@localhost");
         project.setLetterAttachmentFilename("letter.pdf");
@@ -78,7 +88,7 @@ class OutboundMailServiceTest {
 
         MimeMessage[] receivedMessages = greenMail.getReceivedMessages();
         assertThat(receivedMessages).hasSize(1);
-        assertThat(receivedMessages[0].getSubject()).isEqualTo("Outbound Test");
+        assertThat(receivedMessages[0].getSubject()).isEqualTo("Attention to Receiver");
         InternetAddress from = (InternetAddress) receivedMessages[0].getFrom()[0];
         assertThat(from.getAddress()).isEqualTo("sender@localhost");
         assertThat(from.getPersonal()).isNull();
@@ -93,7 +103,7 @@ class OutboundMailServiceTest {
                 Mockito.eq(project),
                 Mockito.eq(contact),
                 Mockito.any(),
-                Mockito.eq("Outbound Test"),
+                Mockito.eq("Attention to Receiver"),
                 Mockito.eq("Body line"),
                 Mockito.eq("sender@localhost"),
                 Mockito.eq("receiver@localhost"),
@@ -112,7 +122,11 @@ class OutboundMailServiceTest {
         javaMailProperties.put("mail.smtp.auth", "false");
 
         ContactMessageService contactMessageService = Mockito.mock(ContactMessageService.class);
-        OutboundMailService service = new OutboundMailService(contactMessageService, project -> sender);
+        OutboundMailService service = new OutboundMailService(
+                contactMessageService,
+                project -> sender,
+                mailTemplateRenderer(List.of(), List.of())
+        );
 
         Path letterDocx = Files.createFile(tempDir.resolve("letter-with-name.docx"));
         Path letterPdf = Files.createFile(tempDir.resolve("letter-with-name.pdf"));
@@ -151,5 +165,137 @@ class OutboundMailServiceTest {
                 Mockito.eq("receiver@localhost"),
                 Mockito.any()
         );
+    }
+
+    @Test
+    void shouldRenderCustomPlaceholderInBodyForMessageAndHistory() throws Exception {
+        greenMail.setUser("receiver@localhost", "receiver@localhost", "secret");
+
+        JavaMailSenderImpl sender = new JavaMailSenderImpl();
+        sender.setHost("127.0.0.1");
+        sender.setPort(ServerSetupTest.SMTP.getPort());
+        Properties javaMailProperties = sender.getJavaMailProperties();
+        javaMailProperties.put("mail.smtp.auth", "false");
+
+        ContactMessageService contactMessageService = Mockito.mock(ContactMessageService.class);
+
+        Project project = new Project();
+        project.setId(UUID.randomUUID());
+        project.setName("Default Project");
+        project.setMailSubject("Outbound Test");
+        project.setMailBody("Send to { department }");
+        project.setMailFrom("sender@localhost");
+        project.setLetterAttachmentFilename("letter.pdf");
+
+        Contact contact = new Contact();
+        contact.setId(UUID.randomUUID());
+        contact.setEmail("receiver@localhost");
+        contact.setContactName("Receiver");
+        contact.setOrganizationName("Org");
+        contact.setStatus(ContactStatus.NEW);
+
+        ProjectContactColumn departmentColumn = new ProjectContactColumn();
+        departmentColumn.setColumnKey("department");
+        departmentColumn.setDisplayLabel("Department");
+        departmentColumn.setSourceType(ContactColumnSource.CUSTOM);
+        departmentColumn.setVisible(true);
+
+        ContactCustomField department = new ContactCustomField();
+        department.setFieldKey("department");
+        department.setFieldValue("Pediatrics");
+
+        OutboundMailService service = new OutboundMailService(
+                contactMessageService,
+                ignored -> sender,
+                mailTemplateRenderer(List.of(departmentColumn), List.of(department))
+        );
+
+        Path letterDocx = Files.createFile(tempDir.resolve("custom-body.docx"));
+        Path letterPdf = Files.createFile(tempDir.resolve("custom-body.pdf"));
+        Files.writeString(letterPdf, "pdf");
+        Files.writeString(letterDocx, "docx");
+
+        service.send(project, contact, new GeneratedLetter(letterDocx, letterPdf), List.of());
+
+        MimeMessage[] receivedMessages = greenMail.getReceivedMessages();
+        assertThat(receivedMessages).hasSize(1);
+        assertThat(messageText(receivedMessages[0].getContent())).contains("Send to Pediatrics");
+        Mockito.verify(contactMessageService).recordOutbound(
+                Mockito.eq(project),
+                Mockito.eq(contact),
+                Mockito.any(),
+                Mockito.eq("Outbound Test"),
+                Mockito.eq("Send to Pediatrics"),
+                Mockito.eq("sender@localhost"),
+                Mockito.eq("receiver@localhost"),
+                Mockito.any()
+        );
+    }
+
+    @Test
+    void shouldRejectUnknownPlaceholderWithoutSending() throws Exception {
+        ContactMessageService contactMessageService = Mockito.mock(ContactMessageService.class);
+        MailSenderFactory mailSenderFactory = Mockito.mock(MailSenderFactory.class);
+        OutboundMailService service = new OutboundMailService(
+                contactMessageService,
+                mailSenderFactory,
+                mailTemplateRenderer(List.of(), List.of())
+        );
+
+        Project project = new Project();
+        project.setId(UUID.randomUUID());
+        project.setMailSubject("Attention to {Departmant}");
+        project.setMailBody("Body line");
+
+        Contact contact = new Contact();
+        contact.setId(UUID.randomUUID());
+        contact.setEmail("receiver@localhost");
+
+        Path letterDocx = Files.createFile(tempDir.resolve("unknown.docx"));
+        Path letterPdf = Files.createFile(tempDir.resolve("unknown.pdf"));
+
+        assertThatThrownBy(() -> service.send(project, contact, new GeneratedLetter(letterDocx, letterPdf), List.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Unknown email template placeholder: {Departmant}");
+        Mockito.verifyNoInteractions(contactMessageService, mailSenderFactory);
+    }
+
+    @Test
+    void shouldRenderBlankKnownFieldAsEmptyString() {
+        Project project = new Project();
+        project.setId(UUID.randomUUID());
+        Contact contact = new Contact();
+        contact.setId(UUID.randomUUID());
+
+        String rendered = mailTemplateRenderer(List.of(), List.of()).render("Note: {Note}.", project, contact);
+
+        assertThat(rendered).isEqualTo("Note: .");
+    }
+
+    private MailTemplateRenderer mailTemplateRenderer(
+            List<ProjectContactColumn> columns,
+            List<ContactCustomField> customFields
+    ) {
+        ContactCustomFieldRepository contactCustomFieldRepository = Mockito.mock(ContactCustomFieldRepository.class);
+        ProjectContactColumnRepository projectContactColumnRepository = Mockito.mock(ProjectContactColumnRepository.class);
+        Mockito.when(contactCustomFieldRepository.findByProjectIdAndContactId(Mockito.any(), Mockito.any()))
+                .thenReturn(customFields);
+        Mockito.when(projectContactColumnRepository.findByProjectIdOrderByColumnOrderAsc(Mockito.any()))
+                .thenReturn(columns);
+        return new MailTemplateRenderer(contactCustomFieldRepository, projectContactColumnRepository);
+    }
+
+    private String messageText(Object content) throws Exception {
+        if (content instanceof String text) {
+            return text;
+        }
+        if (content instanceof Multipart multipart) {
+            StringBuilder text = new StringBuilder();
+            for (int i = 0; i < multipart.getCount(); i++) {
+                text.append(messageText(multipart.getBodyPart(i).getContent()));
+            }
+            return text.toString();
+        }
+        return "";
     }
 }

@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.pdasilem.contactwork.auth.CurrentUserService;
 import com.pdasilem.contactwork.config.AppProperties;
 import com.pdasilem.contactwork.contact.ContactService;
 import com.pdasilem.contactwork.contact.ContactStatus;
@@ -345,7 +346,8 @@ class LocalAiServiceTest {
         StubProjectService(Project project) {
             super(proxy(ProjectRepository.class, invocation -> defaultValue(invocation.getMethod().getReturnType())),
                     new AppProperties(new AppProperties.Resources("/tmp/contactwork-test"),
-                            new AppProperties.Mail(1000, "0 */5 * * * *", null), null));
+                            new AppProperties.Mail(1000, "0 */5 * * * *", null), null),
+                    org.mockito.Mockito.mock(CurrentUserService.class));
             this.project = project;
         }
 
@@ -363,7 +365,7 @@ class LocalAiServiceTest {
 
     private static class StubContactService extends ContactService {
         StubContactService() {
-            super(null, null, null);
+            super(null, null, null, new StubProjectService(new Project()));
         }
 
         @Override

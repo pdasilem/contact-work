@@ -2,8 +2,10 @@ package com.pdasilem.contactwork.ai;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.pdasilem.contactwork.auth.CurrentUserService;
 import com.pdasilem.contactwork.project.AiProvider;
 import java.util.List;
 import java.util.Optional;
@@ -14,7 +16,7 @@ class AppAiSettingsServiceTest {
     @Test
     void currentFallsBackToDefaultLocalSettings() {
         AppAiSettingsRepository repository = repository(Optional.empty());
-        AppAiSettingsService service = new AppAiSettingsService(repository, new StubModelCatalog(List.of()), "local-default");
+        AppAiSettingsService service = service(repository, new StubModelCatalog(List.of()), "local-default");
 
         AppAiSettings settings = service.current();
 
@@ -28,7 +30,7 @@ class AppAiSettingsServiceTest {
         AppAiSettingsRepository repository = repository(Optional.empty());
         when(repository.save(org.mockito.ArgumentMatchers.any(AppAiSettings.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
-        AppAiSettingsService service = new AppAiSettingsService(repository, new StubModelCatalog(List.of("gemini-free")),
+        AppAiSettingsService service = service(repository, new StubModelCatalog(List.of("gemini-free")),
                 "local-default");
 
         AppAiSettings settings = service.save(AiProvider.GOOGLE_GENAI, " gemini-free ", 0.7);
@@ -41,7 +43,7 @@ class AppAiSettingsServiceTest {
 
     @Test
     void saveRejectsUnknownModelAndOutOfRangeTemperature() {
-        AppAiSettingsService service = new AppAiSettingsService(repository(Optional.empty()),
+        AppAiSettingsService service = service(repository(Optional.empty()),
                 new StubModelCatalog(List.of("gemini-free")), "local-default");
 
         assertThatThrownBy(() -> service.save(AiProvider.GOOGLE_GENAI, "gemini-paid", 0.7))
@@ -57,6 +59,10 @@ class AppAiSettingsServiceTest {
         AppAiSettingsRepository repository = org.mockito.Mockito.mock(AppAiSettingsRepository.class);
         when(repository.findById(AppAiSettings.SINGLETON_ID)).thenReturn(current);
         return repository;
+    }
+
+    private AppAiSettingsService service(AppAiSettingsRepository repository, AiModelCatalogService catalog, String defaultModel) {
+        return new AppAiSettingsService(repository, catalog, mock(CurrentUserService.class), defaultModel);
     }
 
     private static class StubModelCatalog extends AiModelCatalogService {

@@ -1,5 +1,6 @@
 package com.pdasilem.contactwork.ai;
 
+import com.pdasilem.contactwork.auth.CurrentUserService;
 import com.pdasilem.contactwork.project.AiProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -15,15 +16,18 @@ public class AppAiSettingsService {
 
     private final AppAiSettingsRepository repository;
     private final AiModelCatalogService modelCatalogService;
+    private final CurrentUserService currentUserService;
     private final String defaultLocalAiModel;
 
     public AppAiSettingsService(
             AppAiSettingsRepository repository,
             AiModelCatalogService modelCatalogService,
+            CurrentUserService currentUserService,
             @Value("${spring.ai.ollama.chat.options.model:" + FALLBACK_LOCAL_AI_MODEL + "}") String defaultLocalAiModel
     ) {
         this.repository = repository;
         this.modelCatalogService = modelCatalogService;
+        this.currentUserService = currentUserService;
         this.defaultLocalAiModel = resolveLocalDefault(defaultLocalAiModel);
     }
 
@@ -34,6 +38,7 @@ public class AppAiSettingsService {
 
     @Transactional
     public AppAiSettings save(AiProvider provider, String model, Double temperature) {
+        currentUserService.requireAdmin();
         AiProvider resolvedProvider = provider == null ? DEFAULT_AI_PROVIDER : provider;
         String resolvedModel = resolveModel(model);
         double resolvedTemperature = resolveTemperature(temperature);

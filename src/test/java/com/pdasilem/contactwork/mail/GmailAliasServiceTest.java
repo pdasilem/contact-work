@@ -1,5 +1,6 @@
 package com.pdasilem.contactwork.mail;
 
+import com.pdasilem.contactwork.auth.CurrentUserService;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
@@ -239,7 +240,7 @@ class GmailAliasServiceTest {
         private String mailFromName;
 
         private RecordingProjectService() {
-            super(projectRepository(), appProperties());
+            super(projectRepository(), appProperties(), org.mockito.Mockito.mock(CurrentUserService.class));
         }
 
         @Override

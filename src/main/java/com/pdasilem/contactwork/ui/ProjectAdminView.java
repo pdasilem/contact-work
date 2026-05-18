@@ -2,6 +2,10 @@ package com.pdasilem.contactwork.ui;
 
 import com.pdasilem.contactwork.api.ImportContactsResponse;
 import com.pdasilem.contactwork.api.SendStatusResponse;
+import com.pdasilem.contactwork.auth.AppRole;
+import com.pdasilem.contactwork.auth.AppUser;
+import com.pdasilem.contactwork.auth.AppUserService;
+import com.pdasilem.contactwork.auth.CurrentUserService;
 import com.pdasilem.contactwork.ai.AiChatMessage;
 import com.pdasilem.contactwork.ai.AiChatRole;
 import com.pdasilem.contactwork.ai.AiChatSession;
@@ -39,6 +43,7 @@ import com.vaadin.flow.component.Html;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
+import com.vaadin.flow.component.checkbox.Checkbox;
 import com.vaadin.flow.component.details.Details;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.grid.Grid;
@@ -56,6 +61,7 @@ import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.JustifyContentMode;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.combobox.MultiSelectComboBox;
 import com.vaadin.flow.component.select.Select;
 import com.vaadin.flow.component.textfield.EmailField;
 import com.vaadin.flow.component.textfield.IntegerField;
@@ -68,9 +74,11 @@ import com.vaadin.flow.component.dependency.CssImport;
 import com.vaadin.flow.router.BeforeEnterEvent;
 import com.vaadin.flow.router.BeforeEnterObserver;
 import com.vaadin.flow.router.Route;
+import com.vaadin.flow.router.RouteAlias;
 import com.vaadin.flow.server.streams.TransferContext;
 import com.vaadin.flow.server.streams.TransferProgressListener;
 import com.vaadin.flow.server.streams.UploadHandler;
+import jakarta.annotation.security.RolesAllowed;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.time.LocalDate;
@@ -80,19 +88,27 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.util.HtmlUtils;
 
 @Route("app")
+@RouteAlias("")
 @CssImport("./styles/contactwork-app.css")
+@RolesAllowed({"ADMIN", "USER"})
 public class ProjectAdminView extends Composite<Div> implements BeforeEnterObserver {
     private static final Logger log = LoggerFactory.getLogger(ProjectAdminView.class);
     private static final String STORAGE_PROJECT_DRAWER_COLLAPSED = "contactwork.projectDrawerCollapsed";
     private static final String STORAGE_SETUP_EXPANDED = "contactwork.projectSetupExpanded";
     private static final String STORAGE_SELECTED_PROJECT_ID = "contactwork.selectedProjectId";
     private static final String STORAGE_GRID_WIDTH_PREFIX = "contactwork.contactGridWidth.";
+    private static final String STORAGE_PROJECT_CHAT_HEIGHT = "contactwork.projectChatHeight";
+    private static final String STORAGE_CONTACT_CHAT_HEIGHT = "contactwork.contactChatHeight";
+    private static final String STORAGE_CONVERSATION_HEIGHT = "contactwork.conversationHeight";
+    private static final String STORAGE_CONTACTS_GRID_HEIGHT_PREFIX = "contactwork.contactsGridHeight.";
 
     private final ProjectService projectService;
     private final ContactService contactService;
@@ -107,6 +123,8 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
     private final LocalAiService localAiService;
     private final AiModelCatalogService modelCatalogService;
     private final AppAiSettingsService appAiSettingsService;
+    private final CurrentUserService currentUserService;
+    private final AppUserService appUserService;
     private final AppProperties appProperties;
 
     private final Div sidebar = new Div();
@@ -153,6 +171,8 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
             LocalAiService localAiService,
             AiModelCatalogService modelCatalogService,
             AppAiSettingsService appAiSettingsService,
+            CurrentUserService currentUserService,
+            AppUserService appUserService,
             AppProperties appProperties
     ) {
         this.projectService = projectService;
@@ -168,6 +188,8 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
         this.localAiService = localAiService;
         this.modelCatalogService = modelCatalogService;
         this.appAiSettingsService = appAiSettingsService;
+        this.currentUserService = currentUserService;
+        this.appUserService = appUserService;
         this.appProperties = appProperties;
         buildShell();
         renderWelcome();
@@ -213,7 +235,10 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
         root.addClassName("cw-shell");
 
         sidebar.addClassName("cw-sidebar");
-        sidebar.add(sidebarHeader(), projectList, newProjectButton());
+        sidebar.add(sidebarHeader(), projectList);
+        if (currentUserService.canCreateProjects()) {
+            sidebar.add(newProjectButton());
+        }
 
         workspace.addClassName("cw-workspace");
         systemDrawer.addClassName("cw-system-drawer");
@@ -279,9 +304,12 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
         empty.addClassName("cw-empty-state");
         H2 title = new H2("Select a project");
         Span text = new Span("Choose a project on the left to see monitoring, contacts, campaign setup, and system settings.");
-        Button create = new Button("Create project", VaadinIcon.PLUS.create(), event -> openNewProjectDialog());
-        create.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
-        empty.add(title, text, create);
+        empty.add(title, text);
+        if (currentUserService.canCreateProjects()) {
+            Button create = new Button("Create project", VaadinIcon.PLUS.create(), event -> openNewProjectDialog());
+            create.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+            empty.add(create);
+        }
         workspace.add(empty);
     }
 
@@ -301,7 +329,17 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
         Button refresh = new Button("Refresh", VaadinIcon.REFRESH.create(), event -> refreshSelectedProject());
         Button aiModel = new Button("AI model", VaadinIcon.MAGIC.create(), event -> openAiModelDialog());
         Button settings = new Button("System", VaadinIcon.COG.create(), event -> toggleSystemDrawer());
-        HorizontalLayout right = new HorizontalLayout(refresh, aiModel, settings);
+        Button logout = new Button("Log out", VaadinIcon.SIGN_OUT.create(), event ->
+                UI.getCurrent().getPage().setLocation("/logout"));
+        HorizontalLayout right;
+        if (currentUserService.isAdmin()) {
+            Button admin = new Button("Admin", VaadinIcon.USER.create(), event -> openAdminDialog());
+            right = new HorizontalLayout(admin, refresh, aiModel, settings, logout);
+        } else if (currentUserService.canUseGlobalSettings()) {
+            right = new HorizontalLayout(refresh, aiModel, settings, logout);
+        } else {
+            right = new HorizontalLayout(refresh, settings, logout);
+        }
         right.setAlignItems(Alignment.CENTER);
 
         HorizontalLayout bar = new HorizontalLayout(left, selectedProjectName, right);
@@ -355,6 +393,64 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
 
     private void persistUiState(String key, String value) {
         UI.getCurrent().getPage().executeJs("window.localStorage.setItem($0, $1)", key, value);
+    }
+
+    private void persistResizableHeight(Component component, String key) {
+        component.getElement().executeJs("""
+                const el = this;
+                const stored = window.localStorage.getItem($0);
+                if (stored) {
+                  el.style.height = stored;
+                }
+                if (!el.__cwHeightObserver) {
+                  let timer;
+                  el.__cwHeightObserver = new ResizeObserver(() => {
+                    window.clearTimeout(timer);
+                    timer = window.setTimeout(() => {
+                      if (el.offsetHeight > 0) {
+                        window.localStorage.setItem($0, el.offsetHeight + 'px');
+                      }
+                    }, 150);
+                  });
+                  el.__cwHeightObserver.observe(el);
+                }
+                """, key);
+    }
+
+    private void configureAiPrompt(TextArea prompt, Button send) {
+        prompt.setHelperText("Enter sends. Ctrl+Enter or Meta+Enter adds a new line.");
+        prompt.getElement().executeJs("""
+                const host = this;
+                const sendButton = $0;
+                if (host.__cwEnterSendBound) {
+                  return;
+                }
+                host.__cwEnterSendBound = true;
+                const bind = () => {
+                  const input = host.shadowRoot && host.shadowRoot.querySelector('textarea');
+                  if (!input || input.__cwEnterSendBound) {
+                    return;
+                  }
+                  input.__cwEnterSendBound = true;
+                  input.addEventListener('keydown', (event) => {
+                    if (event.key !== 'Enter' || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
+                      return;
+                    }
+                    event.preventDefault();
+                    sendButton.click();
+                  });
+                };
+                requestAnimationFrame(bind);
+                host.addEventListener('focusin', bind);
+                """, send.getElement());
+    }
+
+    private void scrollToBottom(Component target) {
+        target.getElement().executeJs("""
+                requestAnimationFrame(() => {
+                  this.scrollTop = this.scrollHeight;
+                });
+                """);
     }
 
     private void renderWorkspace() {
@@ -415,6 +511,7 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
         section.addClassName("cw-ai-section");
         Div history = new Div();
         history.addClassName("cw-chat-history");
+        persistResizableHeight(history, STORAGE_PROJECT_CHAT_HEIGHT);
         Select<AiChatSession> sessions = new Select<>();
         sessions.setLabel("Chat");
         sessions.setItemLabelGenerator(this::chatSessionLabel);
@@ -451,15 +548,17 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
                 renderProjectChat(history, sessions.getValue());
             }
         });
+        Button rename = new Button("Rename", VaadinIcon.EDIT.create(), event ->
+                openRenameChatDialog(sessions, () -> loadProjectChatSessions(sessions)));
         Button systemPrompt = new Button("System prompt", VaadinIcon.COG.create(), event -> openSystemPromptDialog());
         sessions.addValueChangeListener(event -> renderProjectChat(history, event.getValue()));
-        Button ask = new Button("Ask", VaadinIcon.COMMENT_ELLIPSIS.create());
-        ask.addClickListener(event -> {
+        Button send = new Button("Send", VaadinIcon.COMMENT_ELLIPSIS.create());
+        send.addClickListener(event -> {
             String prompt = blankToNull(question.getValue());
             if (prompt == null) {
                 return;
             }
-            ask.setEnabled(false);
+            send.setEnabled(false);
             status.setText("Asking AI...");
             try {
                 AiChatSession session = sessions.getValue();
@@ -474,14 +573,15 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
             } catch (Exception ex) {
                 Notification.show(rootCauseMessage("Project AI failed", ex), 5000, Position.BOTTOM_START);
             } finally {
-                ask.setEnabled(true);
+                send.setEnabled(true);
                 status.setText("");
             }
         });
-        ask.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
-        HorizontalLayout sessionControls = new HorizontalLayout(sessions, newChat, compact, archive, delete);
+        send.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        configureAiPrompt(question, send);
+        HorizontalLayout sessionControls = new HorizontalLayout(sessions, newChat, rename, compact, archive, delete);
         sessionControls.setAlignItems(Alignment.BASELINE);
-        HorizontalLayout controls = new HorizontalLayout(ask, systemPrompt, status);
+        HorizontalLayout controls = new HorizontalLayout(send, systemPrompt, status);
         controls.setAlignItems(Alignment.CENTER);
         section.add(sessionControls, history, question, controls);
         return section;
@@ -627,6 +727,35 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
                 .ifPresent(sessions::setValue);
     }
 
+    private void openRenameChatDialog(Select<AiChatSession> sessions, Supplier<List<AiChatSession>> reload) {
+        AiChatSession session = sessions.getValue();
+        if (session == null) {
+            return;
+        }
+        Dialog dialog = new Dialog();
+        dialog.setHeaderTitle("Rename chat");
+        TextField title = new TextField("Chat name");
+        title.setWidthFull();
+        title.setMaxLength(120);
+        title.setValue(value(session.getTitle()));
+        Button save = new Button("Save", VaadinIcon.CHECK.create(), event -> {
+            try {
+                AiChatSession renamed = localAiService.renameSession(session.getId(), title.getValue());
+                selectChatSession(sessions, reload.get(), renamed.getId());
+                Notification.show("Chat renamed", 2500, Position.BOTTOM_START);
+                dialog.close();
+            } catch (Exception ex) {
+                Notification.show(rootCauseMessage("Rename failed", ex), 5000, Position.BOTTOM_START);
+            }
+        });
+        save.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        Div content = new Div(title);
+        content.addClassName("cw-dialog-form");
+        dialog.add(content);
+        dialog.getFooter().add(save, new Button("Cancel", event -> dialog.close()));
+        dialog.open();
+    }
+
     private String aiProviderLabel(AiProvider provider) {
         return provider == AiProvider.GOOGLE_GENAI ? "Google GenAI" : "Local Ollama";
     }
@@ -661,7 +790,10 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
         contactsGrid = new Grid<>(Contact.class, false);
         contactsGrid.addClassName("cw-contacts-grid");
         rebuildContactGridColumns();
-        contactsGrid.setHeight("340px");
+        contactsGrid.setHeightFull();
+        Div contactsGridPanel = new Div(contactsGrid);
+        contactsGridPanel.addClassName("cw-resizable-grid-panel");
+        persistResizableHeight(contactsGridPanel, STORAGE_CONTACTS_GRID_HEIGHT_PREFIX + selectedProject.getId());
         contactsGrid.setSelectionMode(Grid.SelectionMode.MULTI);
         contactsGrid.addSelectionListener(event -> {
             int count = event.getAllSelectedItems().size();
@@ -678,7 +810,7 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
         conversation.setEnabled(false);
         delete.setEnabled(false);
 
-        section.add(toolbar, contactsGrid);
+        section.add(toolbar, contactsGridPanel);
         return section;
     }
 
@@ -965,6 +1097,185 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
         content.setPadding(false);
         content.setSpacing(true);
         systemDrawer.add(content);
+    }
+
+    private void openAdminDialog() {
+        currentUserService.requireAdmin();
+        Dialog dialog = new Dialog();
+        dialog.setHeaderTitle("Admin");
+        dialog.setResizable(true);
+        dialog.setWidth("900px");
+        dialog.setMaxWidth("95vw");
+        dialog.setMinHeight("520px");
+        dialog.setMaxHeight("90vh");
+
+        Component content = adminUserPanel();
+        dialog.add(content);
+        dialog.getFooter().add(new Button("Close", event -> dialog.close()));
+        dialog.open();
+    }
+
+    private Component adminUserPanel() {
+        Div panel = section("Users", "Create users, set roles, and assign active projects.");
+        Grid<AppUser> userGrid = new Grid<>(AppUser.class, false);
+        userGrid.addColumn(AppUser::getLogin).setHeader("Login").setAutoWidth(true);
+        userGrid.addColumn(AppUser::getName).setHeader("Name").setAutoWidth(true);
+        userGrid.addColumn(AppUser::getRole).setHeader("Role").setAutoWidth(true);
+        userGrid.addColumn(AppUser::isActive).setHeader("Active").setAutoWidth(true);
+        userGrid.addColumn(user -> value(user.getEmail())).setHeader("Email").setAutoWidth(true);
+        userGrid.setWidthFull();
+        userGrid.setHeight("240px");
+
+        Select<AppUser> users = new Select<>();
+        users.setLabel("User");
+        users.setWidthFull();
+        users.setItemLabelGenerator(user -> user == null ? "New user" : user.getLogin());
+
+        TextField name = new TextField("Name");
+        TextField login = new TextField("Login");
+        PasswordField password = new PasswordField("Password");
+        EmailField email = new EmailField("Email");
+        Select<AppRole> role = new Select<>();
+        role.setLabel("Role");
+        role.setItems(AppRole.values());
+        role.setValue(AppRole.USER);
+        Checkbox active = new Checkbox("Active", true);
+        MultiSelectComboBox<Project> assignedProjects = new MultiSelectComboBox<>("Assigned projects");
+        assignedProjects.setWidthFull();
+        List<Project> visibleProjects = projectService.findAllForAdmin();
+        assignedProjects.setItems(visibleProjects);
+        assignedProjects.setItemLabelGenerator(Project::getName);
+
+        java.util.concurrent.atomic.AtomicReference<List<AppUser>> loadedUsers =
+                new java.util.concurrent.atomic.AtomicReference<>(List.of());
+        java.util.concurrent.atomic.AtomicBoolean syncingSelection = new java.util.concurrent.atomic.AtomicBoolean(false);
+
+        Runnable clear = () -> {
+            users.setValue(null);
+            userGrid.deselectAll();
+            name.clear();
+            login.clear();
+            password.clear();
+            email.clear();
+            role.setValue(AppRole.USER);
+            active.setValue(true);
+            assignedProjects.clear();
+        };
+        Runnable reloadUsers = () -> {
+            List<AppUser> allUsers = appUserService.findAll();
+            loadedUsers.set(allUsers);
+            userGrid.setItems(allUsers);
+            users.setItems(allUsers);
+        };
+        reloadUsers.run();
+
+        java.util.function.Consumer<AppUser> selectUser = user -> {
+            if (user == null) {
+                clear.run();
+                return;
+            }
+            AppUser loadedUser = loadedUsers.get().stream()
+                    .filter(candidate -> Objects.equals(candidate.getId(), user.getId()))
+                    .findFirst()
+                    .orElse(user);
+            syncingSelection.set(true);
+            try {
+                if (users.getValue() == null || !Objects.equals(users.getValue().getId(), loadedUser.getId())) {
+                    users.setValue(loadedUser);
+                }
+                userGrid.select(loadedUser);
+            } finally {
+                syncingSelection.set(false);
+            }
+            name.setValue(value(loadedUser.getName()));
+            login.setValue(value(loadedUser.getLogin()));
+            password.clear();
+            email.setValue(value(loadedUser.getEmail()));
+            role.setValue(loadedUser.getRole());
+            active.setValue(loadedUser.isActive());
+            Set<UUID> selectedProjectIds = loadedUser.getAssignedProjects().stream()
+                    .map(Project::getId)
+                    .collect(java.util.stream.Collectors.toSet());
+            assignedProjects.setValue(visibleProjects.stream()
+                    .filter(project -> selectedProjectIds.contains(project.getId()))
+                    .collect(java.util.stream.Collectors.toSet()));
+        };
+
+        userGrid.asSingleSelect().addValueChangeListener(event -> {
+            if (!syncingSelection.get()) {
+                selectUser.accept(event.getValue());
+            }
+        });
+        users.addValueChangeListener(event -> {
+            if (syncingSelection.get()) {
+                return;
+            }
+            AppUser user = event.getValue();
+            if (user == null) {
+                clear.run();
+                return;
+            }
+            selectUser.accept(user);
+        });
+
+        Button save = new Button("Save user", VaadinIcon.CHECK.create(), event -> {
+            try {
+                AppUser selected = users.getValue();
+                AppUser saved = appUserService.saveUser(
+                        selected == null ? null : selected.getId(),
+                        name.getValue(),
+                        login.getValue(),
+                        password.getValue(),
+                        email.getValue(),
+                        role.getValue(),
+                        active.getValue(),
+                        assignedProjects.getValue().stream().map(Project::getId).collect(java.util.stream.Collectors.toSet())
+                );
+                reloadUsers.run();
+                loadedUsers.get().stream()
+                        .filter(user -> user.getId().equals(saved.getId()))
+                        .findFirst()
+                        .ifPresent(selectUser);
+                Notification.show("User saved", 2500, Position.BOTTOM_START);
+            } catch (Exception ex) {
+                Notification.show(rootCauseMessage("User save failed", ex), 5000, Position.BOTTOM_START);
+            }
+        });
+        save.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        Button newUser = new Button("New user", VaadinIcon.PLUS.create(), event -> clear.run());
+        Button activate = new Button("Activate", VaadinIcon.CHECK_CIRCLE.create(), event -> {
+            if (users.getValue() != null) {
+                UUID userId = users.getValue().getId();
+                appUserService.setActive(users.getValue().getId(), true);
+                reloadUsers.run();
+                loadedUsers.get().stream()
+                        .filter(user -> user.getId().equals(userId))
+                        .findFirst()
+                        .ifPresent(selectUser);
+            }
+        });
+        Button deactivate = new Button("Deactivate", VaadinIcon.BAN.create(), event -> {
+            if (users.getValue() != null) {
+                UUID userId = users.getValue().getId();
+                appUserService.setActive(users.getValue().getId(), false);
+                reloadUsers.run();
+                loadedUsers.get().stream()
+                        .filter(user -> user.getId().equals(userId))
+                        .findFirst()
+                        .ifPresent(selectUser);
+            }
+        });
+        Button delete = new Button("Delete", VaadinIcon.TRASH.create(), event -> {
+            if (users.getValue() != null) {
+                appUserService.deleteUser(users.getValue().getId());
+                reloadUsers.run();
+                clear.run();
+            }
+        });
+        HorizontalLayout actions = new HorizontalLayout(newUser, save, activate, deactivate, delete);
+        actions.setAlignItems(Alignment.BASELINE);
+        panel.add(userGrid, users, name, login, password, email, role, active, assignedProjects, actions);
+        return panel;
     }
 
     private Div section(String title, String subtitle) {
@@ -1333,6 +1644,7 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
         dialog.setHeaderTitle("Conversation");
         dialog.setWidth("860px");
         dialog.setMaxWidth("95vw");
+        dialog.setResizable(true);
 
         Div header = new Div();
         header.addClassName("cw-conversation-header");
@@ -1343,6 +1655,7 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
 
         Div messages = new Div();
         messages.addClassName("cw-conversation-list");
+        persistResizableHeight(messages, STORAGE_CONVERSATION_HEIGHT);
         renderConversationMessages(messages, contact);
 
         Div summary = new Div();
@@ -1392,6 +1705,7 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
 
         Div chatHistory = new Div();
         chatHistory.addClassName("cw-chat-history");
+        persistResizableHeight(chatHistory, STORAGE_CONTACT_CHAT_HEIGHT);
         Select<AiChatSession> chatSessions = new Select<>();
         chatSessions.setLabel("Chat");
         chatSessions.setItemLabelGenerator(this::chatSessionLabel);
@@ -1425,14 +1739,16 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
                 renderContactChat(chatHistory, contact, chatSessions.getValue());
             }
         });
+        Button rename = new Button("Rename", VaadinIcon.EDIT.create(), event ->
+                openRenameChatDialog(chatSessions, () -> loadContactChatSessions(chatSessions, contact)));
         chatSessions.addValueChangeListener(event -> renderContactChat(chatHistory, contact, event.getValue()));
-        Button ask = new Button("Ask", VaadinIcon.COMMENT_ELLIPSIS.create());
-        ask.addClickListener(event -> {
+        Button send = new Button("Send", VaadinIcon.COMMENT_ELLIPSIS.create());
+        send.addClickListener(event -> {
             String prompt = blankToNull(question.getValue());
             if (prompt == null) {
                 return;
             }
-            ask.setEnabled(false);
+            send.setEnabled(false);
             aiStatus.setText("Asking AI...");
             try {
                 AiChatSession session = chatSessions.getValue();
@@ -1447,16 +1763,17 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
             } catch (Exception ex) {
                 Notification.show(rootCauseMessage("Contact AI failed", ex), 5000, Position.BOTTOM_START);
             } finally {
-                ask.setEnabled(true);
+                send.setEnabled(true);
                 aiStatus.setText("");
             }
         });
-        ask.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        send.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        configureAiPrompt(question, send);
 
-        HorizontalLayout chatControls = new HorizontalLayout(chatSessions, newChat, compact, archive, deleteChat);
+        HorizontalLayout chatControls = new HorizontalLayout(chatSessions, newChat, rename, compact, archive, deleteChat);
         chatControls.setAlignItems(Alignment.BASELINE);
         Div content = new Div(header, syncContactInbox, syncStatus, messages, summary, summarize, aiStatus,
-                chatControls, chatHistory, question, ask);
+                chatControls, chatHistory, question, send);
         content.addClassName("cw-conversation-panel");
         dialog.add(content);
         dialog.getFooter().add(new Button("Close", event -> dialog.close()));
@@ -1513,6 +1830,7 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
             Span empty = new Span("No AI messages yet.");
             empty.addClassName("cw-muted");
             target.add(empty);
+            scrollToBottom(target);
             return;
         }
         for (AiChatMessage message : messages) {
@@ -1522,6 +1840,7 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
             row.add(new Span(message.getRole().name()), markdown(message.getContent()));
             target.add(row);
         }
+        scrollToBottom(target);
     }
 
     private Component markdown(String text) {

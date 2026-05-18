@@ -4,6 +4,7 @@ import jakarta.persistence.criteria.Predicate;
 import com.pdasilem.contactwork.common.EmailUtils;
 import com.pdasilem.contactwork.history.ContactMessageRepository;
 import com.pdasilem.contactwork.project.Project;
+import com.pdasilem.contactwork.project.ProjectService;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -19,18 +20,22 @@ public class ContactService {
     private final ContactRepository contactRepository;
     private final ContactMessageRepository contactMessageRepository;
     private final ContactCustomFieldRepository contactCustomFieldRepository;
+    private final ProjectService projectService;
 
     public ContactService(
             ContactRepository contactRepository,
             ContactMessageRepository contactMessageRepository,
-            ContactCustomFieldRepository contactCustomFieldRepository
+            ContactCustomFieldRepository contactCustomFieldRepository,
+            ProjectService projectService
     ) {
         this.contactRepository = contactRepository;
         this.contactMessageRepository = contactMessageRepository;
         this.contactCustomFieldRepository = contactCustomFieldRepository;
+        this.projectService = projectService;
     }
 
     public List<Contact> findContacts(UUID projectId, ContactStatus status, String email, String organization) {
+        projectService.getProject(projectId);
         Specification<Contact> specification = (root, query, criteriaBuilder) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(criteriaBuilder.equal(root.get("project").get("id"), projectId));
@@ -50,6 +55,7 @@ public class ContactService {
     }
 
     public List<Contact> searchContacts(UUID projectId, String search) {
+        projectService.getProject(projectId);
         Specification<Contact> specification = (root, query, criteriaBuilder) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(criteriaBuilder.equal(root.get("project").get("id"), projectId));
@@ -68,6 +74,7 @@ public class ContactService {
     }
 
     public Contact getContact(UUID projectId, UUID id) {
+        projectService.getProject(projectId);
         return contactRepository.findByProjectIdAndId(projectId, id)
                 .orElseThrow(() -> new IllegalArgumentException("Contact not found in project " + projectId + ": " + id));
     }
@@ -118,10 +125,12 @@ public class ContactService {
     }
 
     public long countByStatus(UUID projectId, ContactStatus status) {
+        projectService.getProject(projectId);
         return contactRepository.countByProjectIdAndStatusAndDeletedAtIsNull(projectId, status);
     }
 
     public List<ContactCustomField> findCustomFields(UUID projectId, UUID contactId) {
+        projectService.getProject(projectId);
         return contactCustomFieldRepository.findByProjectIdAndContactId(projectId, contactId);
     }
 

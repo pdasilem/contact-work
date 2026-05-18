@@ -55,7 +55,7 @@ class SendCoordinatorTest {
         Contact first = contactWithoutReadableProject(ContactStatus.NEW);
         Contact second = contactWithoutReadableProject(ContactStatus.NEW);
         SendCoordinator coordinator = coordinator();
-        stubSendReady(project);
+        stubBatchSendReady(project);
         stubNoInProgress(project);
         when(contactRepository.findByProjectIdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(project.getId(), ContactStatus.NEW))
                 .thenReturn(List.of(first, second));
@@ -76,7 +76,7 @@ class SendCoordinatorTest {
         Contact second = contactWithoutReadableProject(ContactStatus.NEW);
         Contact third = contactWithoutReadableProject(ContactStatus.NEW);
         SendCoordinator coordinator = coordinator();
-        stubSendReady(project);
+        stubBatchSendReady(project);
         stubNoInProgress(project);
         when(contactRepository.findByProjectIdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(project.getId(), ContactStatus.NEW))
                 .thenReturn(List.of(first, second, third));
@@ -233,6 +233,23 @@ class SendCoordinatorTest {
         stubReadinessOnly(project);
         when(projectAssetService.activeLetterResource(project.getId())).thenReturn(new ByteArrayResource(new byte[0]));
         when(projectAssetService.activeMailAttachments(project.getId())).thenReturn(List.of());
+        when(templateService.generateLetterPdf(any(), any(), any())).thenReturn(generatedLetter());
+        when(outboundMailService.send(any(), any(), any(), any())).thenReturn("message-id");
+    }
+
+    private void stubBatchSendReady(Project project) {
+        ProjectAsset asset = new ProjectAsset();
+        asset.setId(UUID.randomUUID());
+        asset.setProject(project);
+        asset.setType(ProjectAssetType.LETTER_TEMPLATE);
+        asset.setOriginalFilename("letter.docx");
+        asset.setStoredPath("/tmp/letter.docx");
+        when(projectService.getProject(project.getId())).thenReturn(project);
+        when(projectAssetService.activeLetter(project.getId())).thenReturn(Optional.of(asset));
+        when(projectService.getProjectForSystem(project.getId())).thenReturn(project);
+        when(projectAssetService.activeLetterForSystem(project.getId())).thenReturn(Optional.of(asset));
+        when(projectAssetService.activeLetterResourceForSystem(project.getId())).thenReturn(new ByteArrayResource(new byte[0]));
+        when(projectAssetService.activeMailAttachmentsForSystem(project.getId())).thenReturn(List.of());
         when(templateService.generateLetterPdf(any(), any(), any())).thenReturn(generatedLetter());
         when(outboundMailService.send(any(), any(), any(), any())).thenReturn("message-id");
     }

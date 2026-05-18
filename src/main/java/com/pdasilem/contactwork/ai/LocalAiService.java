@@ -11,6 +11,7 @@ import com.pdasilem.contactwork.project.AiProvider;
 import com.pdasilem.contactwork.project.Project;
 import com.pdasilem.contactwork.project.ProjectService;
 import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -35,6 +36,8 @@ public class LocalAiService {
 
     private static final int MAX_HISTORY_CHARS = 6_000;
     private static final int MAX_CONTACT_CONTEXT_CHARS = 12_000;
+    private static final int MAX_SESSION_TITLE_LENGTH = 120;
+    private static final DateTimeFormatter SESSION_TITLE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     private final ObjectProvider<OllamaChatModel> ollamaChatModel;
     private final ObjectProvider<GoogleGenAiChatModel> googleChatModel;
@@ -193,6 +196,14 @@ public class LocalAiService {
     }
 
     @Transactional
+    public AiChatSession renameSession(UUID sessionId, String title) {
+        AiChatSession session = sessionRepository.findById(sessionId)
+                .orElseThrow(() -> new IllegalArgumentException("AI chat session not found: " + sessionId));
+        session.setTitle(validateSessionTitle(title));
+        return sessionRepository.save(session);
+    }
+
+    @Transactional
     public AiChatSession compactSession(UUID sessionId) {
         AiChatSession session = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new IllegalArgumentException("AI chat session not found: " + sessionId));
@@ -228,6 +239,7 @@ public class LocalAiService {
         AiChatSession session = new AiChatSession();
         session.setScope(AiChatScope.PROJECT);
         session.setProject(project);
+        session.setTitle(defaultSessionTitle());
         AppAiSettings settings = appAiSettingsService.current();
         session.setProvider(settings.getProvider());
         session.setModel(settings.getModel());
@@ -239,6 +251,7 @@ public class LocalAiService {
         session.setScope(AiChatScope.CONTACT);
         session.setProject(contact.getProject());
         session.setContact(contact);
+        session.setTitle(defaultSessionTitle());
         AppAiSettings settings = appAiSettingsService.current();
         session.setProvider(settings.getProvider());
         session.setModel(settings.getModel());
@@ -411,5 +424,20 @@ public class LocalAiService {
             throw new IllegalArgumentException("AI chat session not found for contact " + contactId + ": " + sessionId);
         }
         return session;
+    }
+
+    private String defaultSessionTitle() {
+        return "New chat " + OffsetDateTime.now().format(SESSION_TITLE_FORMAT);
+    }
+
+    private String validateSessionTitle(String title) {
+        if (title == null || title.isBlank()) {
+            throw new IllegalArgumentException("Chat title is required");
+        }
+        String trimmed = title.trim();
+        if (trimmed.length() > MAX_SESSION_TITLE_LENGTH) {
+            throw new IllegalArgumentException("Chat title must be at most 120 characters");
+        }
+        return trimmed;
     }
 }

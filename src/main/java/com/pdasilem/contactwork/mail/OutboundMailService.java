@@ -21,14 +21,22 @@ import org.springframework.stereotype.Service;
 public class OutboundMailService {
     private final ContactMessageService contactMessageService;
     private final MailSenderFactory mailSenderFactory;
+    private final MailTemplateRenderer mailTemplateRenderer;
 
-    public OutboundMailService(ContactMessageService contactMessageService, MailSenderFactory mailSenderFactory) {
+    public OutboundMailService(
+            ContactMessageService contactMessageService,
+            MailSenderFactory mailSenderFactory,
+            MailTemplateRenderer mailTemplateRenderer
+    ) {
         this.contactMessageService = contactMessageService;
         this.mailSenderFactory = mailSenderFactory;
+        this.mailTemplateRenderer = mailTemplateRenderer;
     }
 
     public String send(Project project, Contact contact, GeneratedLetter generatedLetter, List<MailAttachment> attachments) {
         try {
+            String subject = mailTemplateRenderer.render(project.getMailSubject(), project, contact);
+            String body = mailTemplateRenderer.render(project.getMailBody(), project, contact);
             JavaMailSender javaMailSender = mailSenderFactory.create(project);
             MimeMessage mimeMessage = javaMailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
@@ -40,8 +48,8 @@ public class OutboundMailService {
                     helper.setFrom(project.getMailFrom());
                 }
             }
-            helper.setSubject(project.getMailSubject());
-            helper.setText(project.getMailBody(), false);
+            helper.setSubject(subject);
+            helper.setText(body, false);
             helper.addAttachment(
                     letterAttachmentName(project),
                     new UrlResource(generatedLetter.pdfPath().toUri())
@@ -56,8 +64,8 @@ public class OutboundMailService {
                     project,
                     contact,
                     messageId,
-                    project.getMailSubject(),
-                    project.getMailBody(),
+                    subject,
+                    body,
                     project.getMailFrom(),
                     contact.getEmail(),
                     OffsetDateTime.now()

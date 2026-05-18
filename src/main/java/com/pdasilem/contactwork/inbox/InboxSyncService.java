@@ -90,6 +90,12 @@ public class InboxSyncService {
     }
 
     @Transactional
+    public void syncInboxForSystem(UUID projectId) {
+        Project project = projectService.getProjectForSystem(projectId);
+        syncInbox(project, null, project.getLastMailSyncAt(), true);
+    }
+
+    @Transactional
     public void syncInbox(UUID projectId, UUID contactId) {
         Project project = projectService.getProject(projectId);
         Contact contact = contactRepository.findByProjectIdAndId(projectId, contactId)
@@ -516,7 +522,11 @@ public class InboxSyncService {
     }
 
     private void selectedProjectMarkSynced(UUID projectId, OffsetDateTime syncCompletedAt) {
-        projectService.markMailSynced(projectId, syncCompletedAt);
+        if (projectService.canCurrentUserAccess(projectId)) {
+            projectService.markMailSynced(projectId, syncCompletedAt);
+        } else {
+            projectService.markMailSyncedForSystem(projectId, syncCompletedAt);
+        }
     }
 
     private record FolderSpec(MailboxFolder folder, String name) {

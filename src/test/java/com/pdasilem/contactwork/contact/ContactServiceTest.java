@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 
 import com.pdasilem.contactwork.history.ContactMessageRepository;
 import com.pdasilem.contactwork.project.Project;
+import com.pdasilem.contactwork.project.ProjectService;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.Path;
@@ -164,7 +165,11 @@ class ContactServiceTest {
     }
 
     private ContactService service() {
-        return new ContactService(contactRepository, contactMessageRepository, contactCustomFieldRepository);
+        ProjectService projectService = org.mockito.Mockito.mock(ProjectService.class);
+        org.mockito.Mockito.lenient()
+                .when(projectService.getProject(org.mockito.ArgumentMatchers.any(UUID.class)))
+                .thenReturn(project());
+        return new ContactService(contactRepository, contactMessageRepository, contactCustomFieldRepository, projectService);
     }
 
     private Project project() {
