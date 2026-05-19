@@ -50,6 +50,8 @@ app:
     public-base-url: ${ONLYOFFICE_PUBLIC_BASE_URL:http://127.0.0.1:8084}
     document-base-url: ${ONLYOFFICE_DOCUMENT_BASE_URL:http://app:8083}
     internal-download-base-url: ${ONLYOFFICE_INTERNAL_DOWNLOAD_BASE_URL:http://onlyoffice}
+    converter-base-url: ${ONLYOFFICE_CONVERTER_BASE_URL:http://onlyoffice}
+    access-secret: ${ONLYOFFICE_ACCESS_SECRET:dev-onlyoffice-secret}
   mail:
     send-delay-ms: 3000
     inbox-sync-cron: "0 */30 * * * *"

@@ -21,8 +21,17 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http.authorizeHttpRequests(authorize -> authorize
                 .requestMatchers("/api/v1/health/**", "/favicon.png").permitAll()
+                .requestMatchers(
+                        "/onlyoffice/projects/*/document",
+                        "/onlyoffice/projects/*/callback",
+                        "/internal/conversion/files/*"
+                ).permitAll()
                 .requestMatchers("/api/**", "/onlyoffice/**").authenticated());
-        http.csrf(csrf -> csrf.ignoringRequestMatchers("/api/**", "/onlyoffice/**"));
+        http.csrf(csrf -> csrf.ignoringRequestMatchers(
+                "/api/**",
+                "/onlyoffice/projects/*/callback",
+                "/internal/conversion/files/*"
+        ));
         http.logout(logout -> logout
                 .logoutRequestMatcher(PathPatternRequestMatcher.withDefaults().matcher("/logout"))
                 .logoutSuccessUrl("/login?logout")

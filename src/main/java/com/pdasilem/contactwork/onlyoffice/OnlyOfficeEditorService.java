@@ -13,6 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.util.UriComponentsBuilder;
 
 @Service
 public class OnlyOfficeEditorService {
@@ -22,18 +23,21 @@ public class OnlyOfficeEditorService {
 
     private final ProjectAssetService projectAssetService;
     private final RestClient restClient;
+    private final OnlyOfficeAccessTokenService accessTokenService;
     private final String publicBaseUrl;
     private final String documentBaseUrl;
     private final String internalDownloadBaseUrl;
 
     public OnlyOfficeEditorService(
             ProjectAssetService projectAssetService,
+            OnlyOfficeAccessTokenService accessTokenService,
             @Value("${app.onlyoffice.public-base-url:http://127.0.0.1:8084}") String publicBaseUrl,
             @Value("${app.onlyoffice.document-base-url:http://app:8083}") String documentBaseUrl,
             @Value("${app.onlyoffice.internal-download-base-url:http://onlyoffice}") String internalDownloadBaseUrl
     ) {
         this.projectAssetService = projectAssetService;
         this.restClient = RestClient.builder().build();
+        this.accessTokenService = accessTokenService;
         this.publicBaseUrl = trimTrailingSlash(publicBaseUrl);
         this.documentBaseUrl = trimTrailingSlash(documentBaseUrl);
         this.internalDownloadBaseUrl = trimTrailingSlash(internalDownloadBaseUrl);
@@ -100,15 +104,24 @@ public class OnlyOfficeEditorService {
         document.put("fileType", "docx");
         document.put("key", documentKey(asset));
         document.put("title", asset.getOriginalFilename());
-        document.put("url", documentBaseUrl + "/onlyoffice/projects/" + projectId + "/document");
+        document.put("url", signedUrl("/onlyoffice/projects/" + projectId + "/document",
+                accessTokenService.documentToken(projectId)));
         return document;
     }
 
     private Map<String, Object> editor(UUID projectId) {
         Map<String, Object> editor = new LinkedHashMap<>();
-        editor.put("callbackUrl", documentBaseUrl + "/onlyoffice/projects/" + projectId + "/callback");
+        editor.put("callbackUrl", signedUrl("/onlyoffice/projects/" + projectId + "/callback",
+                accessTokenService.callbackToken(projectId)));
         editor.put("mode", "edit");
         return editor;
+    }
+
+    private String signedUrl(String path, String token) {
+        return UriComponentsBuilder.fromUriString(documentBaseUrl + path)
+                .queryParam("token", token)
+                .build()
+                .toUriString();
     }
 
     private String documentKey(ProjectAsset asset) {

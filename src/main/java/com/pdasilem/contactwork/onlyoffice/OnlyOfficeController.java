@@ -7,13 +7,16 @@ import java.util.Map;
 import java.util.UUID;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.server.ResponseStatusException;
 
 @Controller
 public class OnlyOfficeController {
@@ -22,10 +25,16 @@ public class OnlyOfficeController {
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
     private final OnlyOfficeEditorService onlyOfficeEditorService;
+    private final OnlyOfficeAccessTokenService accessTokenService;
     private final ObjectMapper objectMapper;
 
-    public OnlyOfficeController(OnlyOfficeEditorService onlyOfficeEditorService, ObjectMapper objectMapper) {
+    public OnlyOfficeController(
+            OnlyOfficeEditorService onlyOfficeEditorService,
+            OnlyOfficeAccessTokenService accessTokenService,
+            ObjectMapper objectMapper
+    ) {
         this.onlyOfficeEditorService = onlyOfficeEditorService;
+        this.accessTokenService = accessTokenService;
         this.objectMapper = objectMapper;
     }
 
@@ -56,7 +65,8 @@ public class OnlyOfficeController {
     }
 
     @GetMapping("/onlyoffice/projects/{projectId}/document")
-    public ResponseEntity<byte[]> document(@PathVariable UUID projectId) {
+    public ResponseEntity<byte[]> document(@PathVariable UUID projectId, @RequestParam(required = false) String token) {
+        requireValidToken(accessTokenService.isValidDocumentToken(projectId, token));
         ProjectAsset asset = onlyOfficeEditorService.activeLetter(projectId);
         return ResponseEntity.ok()
                 .contentType(DOCX_MEDIA_TYPE)
@@ -68,8 +78,19 @@ public class OnlyOfficeController {
 
     @PostMapping("/onlyoffice/projects/{projectId}/callback")
     @ResponseBody
-    public Map<String, Integer> callback(@PathVariable UUID projectId, @org.springframework.web.bind.annotation.RequestBody OnlyOfficeCallbackRequest request) {
+    public Map<String, Integer> callback(
+            @PathVariable UUID projectId,
+            @RequestParam(required = false) String token,
+            @org.springframework.web.bind.annotation.RequestBody OnlyOfficeCallbackRequest request
+    ) {
+        requireValidToken(accessTokenService.isValidCallbackToken(projectId, token));
         onlyOfficeEditorService.handleCallback(projectId, request);
         return Map.of("error", 0);
+    }
+
+    private void requireValidToken(boolean valid) {
+        if (!valid) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        }
     }
 }

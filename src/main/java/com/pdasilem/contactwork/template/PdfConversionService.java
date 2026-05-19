@@ -1,31 +1,39 @@
 package com.pdasilem.contactwork.template;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.pdasilem.contactwork.onlyoffice.OnlyOfficeAccessTokenService;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.util.UriComponentsBuilder;
 
 @Service
 public class PdfConversionService {
     private static final Logger log = LoggerFactory.getLogger(PdfConversionService.class);
-    private static final String ONLYOFFICE_BASE_URL = "http://onlyoffice";
-    private static final String DOCUMENT_BASE_URL = "http://app:8083";
 
     private final String documentBaseUrl;
+    private final OnlyOfficeAccessTokenService accessTokenService;
     private final ConversionFileStore conversionFileStore;
     private final RestClient restClient;
 
-    public PdfConversionService(ConversionFileStore conversionFileStore) {
-        this.documentBaseUrl = DOCUMENT_BASE_URL;
+    public PdfConversionService(
+            ConversionFileStore conversionFileStore,
+            OnlyOfficeAccessTokenService accessTokenService,
+            @Value("${app.onlyoffice.converter-base-url:http://onlyoffice}") String converterBaseUrl,
+            @Value("${app.onlyoffice.document-base-url:http://app:8083}") String documentBaseUrl
+    ) {
+        this.documentBaseUrl = trimTrailingSlash(documentBaseUrl);
+        this.accessTokenService = accessTokenService;
         this.conversionFileStore = conversionFileStore;
         this.restClient = RestClient.builder()
-                .baseUrl(ONLYOFFICE_BASE_URL)
+                .baseUrl(trimTrailingSlash(converterBaseUrl))
                 .build();
     }
 
@@ -94,8 +102,18 @@ public class PdfConversionService {
         return pdfBytes;
     }
 
-    private String buildDocumentUrl(UUID fileId) {
-        return documentBaseUrl + "/internal/conversion/files/" + fileId;
+    String buildDocumentUrl(UUID fileId) {
+        return UriComponentsBuilder.fromUriString(documentBaseUrl + "/internal/conversion/files/" + fileId)
+                .queryParam("token", accessTokenService.conversionToken(fileId))
+                .build()
+                .toUriString();
+    }
+
+    private String trimTrailingSlash(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        return value.endsWith("/") ? value.substring(0, value.length() - 1) : value;
     }
 
     private String buildDocumentKey(Path docxPath) {

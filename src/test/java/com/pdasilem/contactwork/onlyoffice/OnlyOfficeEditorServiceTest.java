@@ -29,8 +29,10 @@ class OnlyOfficeEditorServiceTest {
         ProjectAsset asset = activeLetter(projectId);
         ProjectAssetService projectAssetService = Mockito.mock(ProjectAssetService.class);
         when(projectAssetService.activeLetterOrThrow(projectId)).thenReturn(asset);
+        OnlyOfficeAccessTokenService accessTokenService = accessTokenService();
         OnlyOfficeEditorService service = new OnlyOfficeEditorService(
                 projectAssetService,
+                accessTokenService,
                 "http://browser-onlyoffice",
                 "http://app:8083",
                 "http://onlyoffice"
@@ -44,16 +46,19 @@ class OnlyOfficeEditorServiceTest {
         assertThat(document.get("fileType")).isEqualTo("docx");
         assertThat(document.get("title")).isEqualTo("letter.docx");
         assertThat(document.get("key").toString()).contains(asset.getId().toString());
-        assertThat(document.get("url")).isEqualTo("http://app:8083/onlyoffice/projects/" + projectId + "/document");
+        assertThat(document.get("url")).isEqualTo("http://app:8083/onlyoffice/projects/" + projectId
+                + "/document?token=" + accessTokenService.documentToken(projectId));
         Map<?, ?> editor = (Map<?, ?>) config.get("editorConfig");
         assertThat(editor.get("mode")).isEqualTo("edit");
-        assertThat(editor.get("callbackUrl")).isEqualTo("http://app:8083/onlyoffice/projects/" + projectId + "/callback");
+        assertThat(editor.get("callbackUrl")).isEqualTo("http://app:8083/onlyoffice/projects/" + projectId
+                + "/callback?token=" + accessTokenService.callbackToken(projectId));
     }
 
     @Test
     void callbackDownloadUrlRewritesPublicOnlyofficeOriginToInternalOrigin() {
         OnlyOfficeEditorService service = new OnlyOfficeEditorService(
                 Mockito.mock(ProjectAssetService.class),
+                accessTokenService(),
                 "http://127.0.0.1:8084",
                 "http://app:8083",
                 "http://onlyoffice"
@@ -83,6 +88,7 @@ class OnlyOfficeEditorServiceTest {
             when(builder.build()).thenReturn(restClient);
             OnlyOfficeEditorService service = new OnlyOfficeEditorService(
                     projectAssetService,
+                    accessTokenService(),
                     "http://browser-onlyoffice",
                     "http://app:8083",
                     "http://internal-onlyoffice"
@@ -97,6 +103,10 @@ class OnlyOfficeEditorServiceTest {
         ArgumentCaptor<byte[]> bytes = ArgumentCaptor.forClass(byte[].class);
         verify(projectAssetService, times(2)).overwriteActiveLetter(eq(projectId), bytes.capture());
         assertThat(bytes.getAllValues()).allSatisfy(value -> assertThat(value).isEqualTo(updated));
+    }
+
+    private OnlyOfficeAccessTokenService accessTokenService() {
+        return new OnlyOfficeAccessTokenService("test-onlyoffice-secret");
     }
 
     private ProjectAsset activeLetter(UUID projectId) throws Exception {
