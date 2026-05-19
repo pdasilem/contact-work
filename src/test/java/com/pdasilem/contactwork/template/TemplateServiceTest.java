@@ -29,7 +29,7 @@ class TemplateServiceTest {
                 new AppProperties.Resources(
                         tempDir.toString()
                 ),
-                new AppProperties.Mail(0, "0 */5 * * * *", null),
+                new AppProperties.Mail(0, "0 */5 * * * *", null, null),
                 null
         );
 

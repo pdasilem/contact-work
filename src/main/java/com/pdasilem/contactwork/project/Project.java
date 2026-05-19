@@ -56,6 +56,10 @@ public class Project {
     @Column(name = "inbox_sync_cron", nullable = false)
     private String inboxSyncCron;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "mail_transport", nullable = false)
+    private MailTransportType mailTransport = MailTransportType.BREVO;
+
     @Column(name = "gmail_username")
     private String gmailUsername;
 
@@ -197,6 +201,14 @@ public class Project {
 
     public void setInboxSyncCron(String inboxSyncCron) {
         this.inboxSyncCron = inboxSyncCron;
+    }
+
+    public MailTransportType getMailTransport() {
+        return mailTransport;
+    }
+
+    public void setMailTransport(MailTransportType mailTransport) {
+        this.mailTransport = mailTransport;
     }
 
     public String getGmailUsername() {

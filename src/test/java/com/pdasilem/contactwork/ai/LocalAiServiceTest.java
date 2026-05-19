@@ -346,7 +346,7 @@ class LocalAiServiceTest {
         StubProjectService(Project project) {
             super(proxy(ProjectRepository.class, invocation -> defaultValue(invocation.getMethod().getReturnType())),
                     new AppProperties(new AppProperties.Resources("/tmp/contactwork-test"),
-                            new AppProperties.Mail(1000, "0 */5 * * * *", null), null),
+                            new AppProperties.Mail(1000, "0 */5 * * * *", null, null), null),
                     org.mockito.Mockito.mock(CurrentUserService.class));
             this.project = project;
         }

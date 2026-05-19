@@ -29,6 +29,7 @@ import com.pdasilem.contactwork.mail.GmailAuthorizationRequiredException;
 import com.pdasilem.contactwork.mail.GmailAliasService;
 import com.pdasilem.contactwork.mail.MailHealthService;
 import com.pdasilem.contactwork.mail.SendCoordinator;
+import com.pdasilem.contactwork.project.MailTransportType;
 import com.pdasilem.contactwork.project.AiProvider;
 import com.pdasilem.contactwork.project.Project;
 import com.pdasilem.contactwork.project.ProjectService;
@@ -145,6 +146,8 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
     private boolean setupExpanded;
 
     private final Select<ProjectStatus> projectStatus = new Select<>();
+    private final Select<MailTransportType> mailTransportSelect = new Select<>();
+    private final Span brevoInfo = new Span("Uses global BREVO_API_KEY from environment");
     private final TextField mailSubject = new TextField("Email subject");
     private final TextArea mailBody = new TextArea("Email body");
     private final TextField letterAttachmentFilename = new TextField("Letter attachment name");
@@ -977,9 +980,16 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
         if (value(selectedProject.getMailBody()).isBlank()) {
             reasons.add("body missing");
         }
-        if (!hasProjectCredential(selectedProject.getGmailUsername())
-                || !hasProjectCredential(selectedProject.getGmailAppPassword())) {
-            reasons.add("missing Gmail credentials");
+        if (selectedProject.getMailTransport() == MailTransportType.GMAIL) {
+            if (!hasProjectCredential(selectedProject.getGmailUsername())
+                    || !hasProjectCredential(selectedProject.getGmailAppPassword())) {
+                reasons.add("missing Gmail credentials");
+            }
+        } else {
+            String brevoKey = appProperties.mail().brevo().apiKey();
+            if (brevoKey == null || brevoKey.isBlank()) {
+                reasons.add("BREVO_API_KEY not configured");
+            }
         }
         if (reasons.isEmpty()) {
             readinessState.setText("Ready for sending");
@@ -988,6 +998,13 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
             readinessState.setText("Not ready: " + String.join(", ", reasons));
             readinessState.addClassName("cw-pill-warning");
         }
+    }
+
+    private void updateTransportFieldsVisibility() {
+        boolean gmail = mailTransportSelect.getValue() == MailTransportType.GMAIL;
+        gmailUsername.setVisible(gmail);
+        gmailAppPassword.setVisible(gmail);
+        brevoInfo.setVisible(!gmail);
     }
 
     private void refreshAssets() {
@@ -1078,6 +1095,10 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
         helper.addClassName("cw-muted");
         projectStatus.setLabel("Project status");
         projectStatus.setItems(ProjectStatus.values());
+        mailTransportSelect.setLabel("Mail transport");
+        mailTransportSelect.setItems(MailTransportType.values());
+        mailTransportSelect.addValueChangeListener(event -> updateTransportFieldsVisibility());
+        brevoInfo.addClassName("cw-muted");
         sendDelayMs.setMin(0);
         sendDelayMs.setStep(500);
         maxMessagesPerBatch.setMin(1);
@@ -1092,8 +1113,11 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
         save.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         Button close = new Button("Close", VaadinIcon.CLOSE_SMALL.create(), event -> systemDrawer.removeClassName("open"));
 
-        VerticalLayout content = new VerticalLayout(title, helper, gmailSentFolderWarning(), projectStatus, mailFromName, mailFrom, senderAliasStatus, gmailUsername,
+        VerticalLayout content = new VerticalLayout(title, helper, gmailSentFolderWarning(), projectStatus,
+                mailTransportSelect, brevoInfo,
+                mailFromName, mailFrom, senderAliasStatus, gmailUsername,
                 gmailAppPassword, sendDelayMs, maxMessagesPerBatch, inboxSyncCron, health, syncAlias, save, close);
+        updateTransportFieldsVisibility();
         content.setPadding(false);
         content.setSpacing(true);
         systemDrawer.add(content);
@@ -1297,6 +1321,9 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
     private void loadProjectSettings(Project project) {
         projectStatus.setItems(ProjectStatus.values());
         projectStatus.setValue(project.getStatus() == null ? ProjectStatus.NEW : project.getStatus());
+        mailTransportSelect.setItems(MailTransportType.values());
+        mailTransportSelect.setValue(project.getMailTransport() == null ? MailTransportType.BREVO : project.getMailTransport());
+        updateTransportFieldsVisibility();
         mailSubject.setValue(value(project.getMailSubject()));
         mailBody.setValue(value(project.getMailBody()));
         letterAttachmentFilename.setValue(value(project.getLetterAttachmentFilename()));
@@ -1313,6 +1340,7 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
         try {
             Project updates = new Project();
             updates.setStatus(projectStatus.getValue());
+            updates.setMailTransport(mailTransportSelect.getValue());
             updates.setMailSubject(blankToNull(mailSubject.getValue()));
             updates.setMailBody(blankToNull(mailBody.getValue()));
             updates.setLetterAttachmentFilename(blankToNull(letterAttachmentFilename.getValue()));

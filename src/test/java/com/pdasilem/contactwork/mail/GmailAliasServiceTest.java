@@ -203,7 +203,8 @@ class GmailAliasServiceTest {
                                         "client-secret",
                                         "http://localhost/oauth/gmail/callback"
                                 )
-                        )
+                        ),
+                        null
                 ),
                 null
         );
@@ -212,7 +213,7 @@ class GmailAliasServiceTest {
     private static AppProperties propertiesWithoutGmail() {
         return new AppProperties(
                 new AppProperties.Resources("/tmp"),
-                new AppProperties.Mail(0, "0 */5 * * * *", null),
+                new AppProperties.Mail(0, "0 */5 * * * *", null, null),
                 null
         );
     }
@@ -267,7 +268,7 @@ class GmailAliasServiceTest {
     private static AppProperties appProperties() {
         return new AppProperties(
                 new AppProperties.Resources("/tmp/contactwork-test"),
-                new AppProperties.Mail(1000, "0 */5 * * * *", null),
+                new AppProperties.Mail(1000, "0 */5 * * * *", null, null),
                 null
         );
     }

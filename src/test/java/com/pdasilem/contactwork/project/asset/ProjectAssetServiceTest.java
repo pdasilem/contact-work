@@ -208,7 +208,7 @@ class ProjectAssetServiceTest {
     private AppProperties appProperties() {
         return new AppProperties(
                 new AppProperties.Resources(tempDir.toString()),
-                new AppProperties.Mail(1000, "0 */5 * * * *", null),
+                new AppProperties.Mail(1000, "0 */5 * * * *", null, null),
                 null
         );
     }

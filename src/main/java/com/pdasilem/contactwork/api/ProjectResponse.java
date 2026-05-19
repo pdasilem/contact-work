@@ -1,5 +1,6 @@
 package com.pdasilem.contactwork.api;
 
+import com.pdasilem.contactwork.project.MailTransportType;
 import com.pdasilem.contactwork.project.ProjectStatus;
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -9,6 +10,7 @@ public record ProjectResponse(
         String name,
         String description,
         ProjectStatus status,
+        MailTransportType mailTransport,
         String letterTemplate,
         String mailSubject,
         String mailBody,

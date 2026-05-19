@@ -55,6 +55,8 @@ app:
   mail:
     send-delay-ms: 3000
     inbox-sync-cron: "0 */30 * * * *"
+    brevo:
+      api-key: ${BREVO_API_KEY:}
     gmail:
       inbox-folder: ${GMAIL_INBOX_FOLDER:INBOX}
       sent-folder: ${GMAIL_SENT_FOLDER:[Gmail]/Sent Mail}

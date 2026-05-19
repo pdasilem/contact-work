@@ -1,9 +1,11 @@
 package com.pdasilem.contactwork.mail;
 
 import com.pdasilem.contactwork.api.SendStatusResponse;
+import com.pdasilem.contactwork.config.AppProperties;
 import com.pdasilem.contactwork.contact.Contact;
 import com.pdasilem.contactwork.contact.ContactRepository;
 import com.pdasilem.contactwork.contact.ContactStatus;
+import com.pdasilem.contactwork.project.MailTransportType;
 import com.pdasilem.contactwork.project.Project;
 import com.pdasilem.contactwork.project.ProjectService;
 import com.pdasilem.contactwork.project.ProjectStatus;
@@ -21,6 +23,7 @@ public class SendCoordinator {
     private final ProjectAssetService projectAssetService;
     private final ContactSendProcessor contactSendProcessor;
     private final TaskExecutor taskExecutor;
+    private final AppProperties appProperties;
     private final AtomicBoolean running = new AtomicBoolean(false);
 
     public SendCoordinator(
@@ -28,13 +31,15 @@ public class SendCoordinator {
             ProjectService projectService,
             ProjectAssetService projectAssetService,
             ContactSendProcessor contactSendProcessor,
-            TaskExecutor taskExecutor
+            TaskExecutor taskExecutor,
+            AppProperties appProperties
     ) {
         this.contactRepository = contactRepository;
         this.projectService = projectService;
         this.projectAssetService = projectAssetService;
         this.contactSendProcessor = contactSendProcessor;
         this.taskExecutor = taskExecutor;
+        this.appProperties = appProperties;
     }
 
     public void start(UUID projectId) {
@@ -117,9 +122,16 @@ public class SendCoordinator {
         if (project.getMailBody() == null || project.getMailBody().isBlank()) {
             throw new IllegalStateException("Project email body is required before sending");
         }
-        if (project.getGmailUsername() == null || project.getGmailUsername().isBlank()
-                || project.getGmailAppPassword() == null || project.getGmailAppPassword().isBlank()) {
-            throw new IllegalStateException("Project Gmail credentials are required before sending");
+        if (project.getMailTransport() == MailTransportType.GMAIL) {
+            if (project.getGmailUsername() == null || project.getGmailUsername().isBlank()
+                    || project.getGmailAppPassword() == null || project.getGmailAppPassword().isBlank()) {
+                throw new IllegalStateException("Project Gmail credentials are required before sending");
+            }
+        } else {
+            String brevoKey = appProperties.mail().brevo().apiKey();
+            if (brevoKey == null || brevoKey.isBlank()) {
+                throw new IllegalStateException("BREVO_API_KEY environment variable is not configured");
+            }
         }
         projectAssetService.activeLetter(projectId)
                 .orElseThrow(() -> new IllegalStateException("Project has no active letter template"));

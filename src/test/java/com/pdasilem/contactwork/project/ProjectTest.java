@@ -161,7 +161,7 @@ class ProjectTest {
     private AppProperties appProperties() {
         return new AppProperties(
                 new AppProperties.Resources("/tmp/contactwork-test"),
-                new AppProperties.Mail(1000, "0 */5 * * * *", gmailProperties()),
+                new AppProperties.Mail(1000, "0 */5 * * * *", gmailProperties(), null),
                 null
         );
     }
@@ -169,7 +169,7 @@ class ProjectTest {
     private AppProperties appPropertiesWithoutGmail() {
         return new AppProperties(
                 new AppProperties.Resources("/tmp/contactwork-test"),
-                new AppProperties.Mail(1000, "0 */5 * * * *", null),
+                new AppProperties.Mail(1000, "0 */5 * * * *", null, null),
                 null
         );
     }

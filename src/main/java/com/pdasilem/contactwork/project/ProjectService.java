@@ -69,6 +69,9 @@ public class ProjectService {
         if (updates.getStatus() != null) {
             project.setStatus(updates.getStatus());
         }
+        if (updates.getMailTransport() != null) {
+            project.setMailTransport(updates.getMailTransport());
+        }
         if (updates.getLetterTemplate() != null) {
             project.setLetterTemplate(updates.getLetterTemplate());
         }

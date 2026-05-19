@@ -62,7 +62,7 @@ class ContactWorkAiToolsTest {
     private ContactWorkAiTools tools(String apiKey, HttpClient httpClient) {
         AppProperties properties = new AppProperties(
                 new AppProperties.Resources("/tmp/contactwork-test"),
-                new AppProperties.Mail(1000, "0 */5 * * * *", null),
+                new AppProperties.Mail(1000, "0 */5 * * * *", null, null),
                 new AppProperties.Ai(new AppProperties.Brave(apiKey, "https://api.search.brave.com/res/v1/web/search", 5))
         );
         return new ContactWorkAiTools(

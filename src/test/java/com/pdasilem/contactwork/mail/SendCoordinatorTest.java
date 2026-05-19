@@ -7,9 +7,11 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.pdasilem.contactwork.config.AppProperties;
 import com.pdasilem.contactwork.contact.Contact;
 import com.pdasilem.contactwork.contact.ContactRepository;
 import com.pdasilem.contactwork.contact.ContactStatus;
+import com.pdasilem.contactwork.project.MailTransportType;
 import com.pdasilem.contactwork.project.Project;
 import com.pdasilem.contactwork.project.ProjectService;
 import com.pdasilem.contactwork.project.ProjectStatus;
@@ -209,13 +211,22 @@ class SendCoordinatorTest {
                 .noneSatisfy(method -> assertThat(method.isAnnotationPresent(Transactional.class)).isTrue());
     }
 
+    private AppProperties testAppProperties() {
+        return new AppProperties(
+                new AppProperties.Resources("/tmp"),
+                new AppProperties.Mail(1000, "0 */5 * * * *", null, null),
+                null
+        );
+    }
+
     private SendCoordinator coordinator() {
         return new SendCoordinator(
                 contactRepository,
                 projectService,
                 projectAssetService,
                 processor(),
-                Runnable::run
+                Runnable::run,
+                testAppProperties()
         );
     }
 
@@ -225,7 +236,8 @@ class SendCoordinatorTest {
                 templateService,
                 outboundMailService,
                 projectService,
-                projectAssetService
+                projectAssetService,
+                testAppProperties()
         );
     }
 
@@ -283,6 +295,7 @@ class SendCoordinatorTest {
         project.setStatus(ProjectStatus.ACTIVE);
         project.setMailSubject("Subject");
         project.setMailBody("Body");
+        project.setMailTransport(MailTransportType.GMAIL);
         project.setGmailUsername("user@example.com");
         project.setGmailAppPassword("password");
         project.setSendDelayMs(0);

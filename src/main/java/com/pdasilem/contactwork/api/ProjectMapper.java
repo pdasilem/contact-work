@@ -16,6 +16,7 @@ public class ProjectMapper {
         project.setName(request.name());
         project.setDescription(request.description());
         project.setStatus(request.status());
+        project.setMailTransport(request.mailTransport());
         project.setLetterTemplate(request.letterTemplate());
         project.setMailSubject(request.mailSubject());
         project.setMailBody(request.mailBody());
@@ -39,6 +40,7 @@ public class ProjectMapper {
                 project.getName(),
                 project.getDescription(),
                 project.getStatus(),
+                project.getMailTransport(),
                 project.getLetterTemplate(),
                 project.getMailSubject(),
                 project.getMailBody(),

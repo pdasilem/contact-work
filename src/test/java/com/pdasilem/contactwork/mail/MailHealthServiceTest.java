@@ -8,6 +8,7 @@ import com.pdasilem.contactwork.ai.AiModelCatalogService;
 import com.pdasilem.contactwork.config.AppProperties;
 import com.pdasilem.contactwork.inbox.InboxSyncService;
 import com.pdasilem.contactwork.project.AiProvider;
+import com.pdasilem.contactwork.project.MailTransportType;
 import com.pdasilem.contactwork.project.Project;
 import com.pdasilem.contactwork.project.ProjectRepository;
 import com.pdasilem.contactwork.project.ProjectService;
@@ -20,33 +21,57 @@ import org.junit.jupiter.api.Test;
 class MailHealthServiceTest {
 
     @Test
-    void verifyConnectionsChecksSmtpThenInboxWithoutSyncingDefaultAlias() {
-        RecordingProjectService projectService = new RecordingProjectService(configuredProject());
+    void verifyConnectionsChecksSmtpThenInboxForGmailTransport() {
+        Project project = gmailProject();
+        RecordingProjectService projectService = new RecordingProjectService(project);
         List<String> events = new ArrayList<>();
         RecordingOutboundMailService outboundMailService = new RecordingOutboundMailService(events);
         RecordingInboxSyncService inboxSyncService = new RecordingInboxSyncService(events);
         MailHealthService service = new MailHealthService(
                 inboxSyncService,
                 outboundMailService,
-                projectService
+                projectService,
+                appProperties()
         );
 
         Throwable thrown = catchThrowable(() -> service.verifyConnections(Project.DEFAULT_PROJECT_ID));
 
         assertThat(thrown).isNull();
-        assertThat(events).containsExactly("smtp", "imap");
+        assertThat(events).containsExactly("transport", "imap");
     }
 
     @Test
-    void verifyConnectionsRequiresProjectGmailCredentials() {
-        RecordingProjectService projectService = new RecordingProjectService(new Project());
+    void verifyConnectionsChecksTransportOnlyForBrevoTransport() {
+        Project project = brevoProject();
+        RecordingProjectService projectService = new RecordingProjectService(project);
         List<String> events = new ArrayList<>();
         RecordingOutboundMailService outboundMailService = new RecordingOutboundMailService(events);
         RecordingInboxSyncService inboxSyncService = new RecordingInboxSyncService(events);
         MailHealthService service = new MailHealthService(
                 inboxSyncService,
                 outboundMailService,
-                projectService
+                projectService,
+                appPropertiesWithBrevoKey()
+        );
+
+        Throwable thrown = catchThrowable(() -> service.verifyConnections(Project.DEFAULT_PROJECT_ID));
+
+        assertThat(thrown).isNull();
+        assertThat(events).containsExactly("transport");
+    }
+
+    @Test
+    void verifyConnectionsRequiresGmailCredentialsForGmailTransport() {
+        Project project = new Project();
+        project.setId(Project.DEFAULT_PROJECT_ID);
+        project.setMailTransport(MailTransportType.GMAIL);
+        RecordingProjectService projectService = new RecordingProjectService(project);
+        List<String> events = new ArrayList<>();
+        MailHealthService service = new MailHealthService(
+                new RecordingInboxSyncService(events),
+                new RecordingOutboundMailService(events),
+                projectService,
+                appProperties()
         );
 
         Throwable thrown = catchThrowable(() -> service.verifyConnections(Project.DEFAULT_PROJECT_ID));
@@ -58,15 +83,37 @@ class MailHealthServiceTest {
     }
 
     @Test
-    void smtpFailurePreventsInboxCheckAndAliasSync() {
-        RecordingProjectService projectService = new RecordingProjectService(configuredProject());
+    void verifyConnectionsRequiresBrevoApiKeyForBrevoTransport() {
+        Project project = brevoProject();
+        RecordingProjectService projectService = new RecordingProjectService(project);
+        List<String> events = new ArrayList<>();
+        MailHealthService service = new MailHealthService(
+                new RecordingInboxSyncService(events),
+                new RecordingOutboundMailService(events),
+                projectService,
+                appProperties()
+        );
+
+        Throwable thrown = catchThrowable(() -> service.verifyConnections(Project.DEFAULT_PROJECT_ID));
+
+        assertThat(thrown)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("BREVO_API_KEY environment variable is not configured");
+        assertThat(events).isEmpty();
+    }
+
+    @Test
+    void transportFailurePreventsInboxCheck() {
+        Project project = gmailProject();
+        RecordingProjectService projectService = new RecordingProjectService(project);
         List<String> events = new ArrayList<>();
         RecordingOutboundMailService outboundMailService = new RecordingOutboundMailService(events, "SMTP failed");
         RecordingInboxSyncService inboxSyncService = new RecordingInboxSyncService(events);
         MailHealthService service = new MailHealthService(
                 inboxSyncService,
                 outboundMailService,
-                projectService
+                projectService,
+                appProperties()
         );
 
         Throwable thrown = catchThrowable(() -> service.verifyConnections(Project.DEFAULT_PROJECT_ID));
@@ -74,14 +121,22 @@ class MailHealthServiceTest {
         assertThat(thrown)
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("SMTP failed");
-        assertThat(events).containsExactly("smtp");
+        assertThat(events).containsExactly("transport");
     }
 
-    private static Project configuredProject() {
+    private static Project gmailProject() {
         Project project = new Project();
         project.setId(Project.DEFAULT_PROJECT_ID);
+        project.setMailTransport(MailTransportType.GMAIL);
         project.setGmailUsername("user@example.com");
         project.setGmailAppPassword("app-password");
+        return project;
+    }
+
+    private static Project brevoProject() {
+        Project project = new Project();
+        project.setId(Project.DEFAULT_PROJECT_ID);
+        project.setMailTransport(MailTransportType.BREVO);
         return project;
     }
 
@@ -110,20 +165,17 @@ class MailHealthServiceTest {
     private static AppProperties appProperties() {
         return new AppProperties(
                 new AppProperties.Resources("/tmp/contactwork-test"),
-                new AppProperties.Mail(1000, "0 */5 * * * *", null),
+                new AppProperties.Mail(1000, "0 */5 * * * *", null, null),
                 null
         );
     }
 
-    private static final class StubModelCatalog extends AiModelCatalogService {
-        private StubModelCatalog() {
-            super(null, null);
-        }
-
-        @Override
-        public List<String> requiredModelsFor(AiProvider provider) {
-            return List.of();
-        }
+    private static AppProperties appPropertiesWithBrevoKey() {
+        return new AppProperties(
+                new AppProperties.Resources("/tmp/contactwork-test"),
+                new AppProperties.Mail(1000, "0 */5 * * * *", null, new AppProperties.Brevo("test-brevo-key")),
+                null
+        );
     }
 
     private static final class RecordingOutboundMailService extends OutboundMailService {
@@ -141,8 +193,8 @@ class MailHealthServiceTest {
         }
 
         @Override
-        public void verifySmtp(Project project) {
-            events.add("smtp");
+        public void verifyTransport(Project project) {
+            events.add("transport");
             if (failure != null) {
                 throw new IllegalStateException(failure);
             }

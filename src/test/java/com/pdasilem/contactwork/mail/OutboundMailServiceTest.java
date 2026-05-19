@@ -13,6 +13,7 @@ import com.pdasilem.contactwork.contact.ContactStatus;
 import com.pdasilem.contactwork.contact.ProjectContactColumn;
 import com.pdasilem.contactwork.contact.ProjectContactColumnRepository;
 import com.pdasilem.contactwork.history.ContactMessageService;
+import com.pdasilem.contactwork.project.MailTransportType;
 import com.pdasilem.contactwork.project.Project;
 import com.pdasilem.contactwork.project.asset.MailAttachment;
 import com.pdasilem.contactwork.template.GeneratedLetter;
@@ -44,16 +45,10 @@ class OutboundMailServiceTest {
     void shouldSendMessageWithTwoPdfAttachments() throws Exception {
         greenMail.setUser("receiver@localhost", "receiver@localhost", "secret");
 
-        JavaMailSenderImpl sender = new JavaMailSenderImpl();
-        sender.setHost("127.0.0.1");
-        sender.setPort(ServerSetupTest.SMTP.getPort());
-        Properties javaMailProperties = sender.getJavaMailProperties();
-        javaMailProperties.put("mail.smtp.auth", "false");
-
         ContactMessageService contactMessageService = Mockito.mock(ContactMessageService.class);
         OutboundMailService service = new OutboundMailService(
                 contactMessageService,
-                project -> sender,
+                gmailRouter(),
                 mailTemplateRenderer(List.of(), List.of())
         );
 
@@ -71,9 +66,7 @@ class OutboundMailServiceTest {
             }
         };
         contact.setId(UUID.randomUUID());
-        Project project = new Project();
-        project.setId(Project.DEFAULT_PROJECT_ID);
-        project.setName("Default Project");
+        Project project = gmailProject();
         project.setMailSubject("Attention to {Contact}");
         project.setMailBody("Body line");
         project.setMailFrom("sender@localhost");
@@ -115,16 +108,10 @@ class OutboundMailServiceTest {
     void shouldSendMessageWithSenderDisplayName() throws Exception {
         greenMail.setUser("receiver@localhost", "receiver@localhost", "secret");
 
-        JavaMailSenderImpl sender = new JavaMailSenderImpl();
-        sender.setHost("127.0.0.1");
-        sender.setPort(ServerSetupTest.SMTP.getPort());
-        Properties javaMailProperties = sender.getJavaMailProperties();
-        javaMailProperties.put("mail.smtp.auth", "false");
-
         ContactMessageService contactMessageService = Mockito.mock(ContactMessageService.class);
         OutboundMailService service = new OutboundMailService(
                 contactMessageService,
-                project -> sender,
+                gmailRouter(),
                 mailTemplateRenderer(List.of(), List.of())
         );
 
@@ -135,9 +122,7 @@ class OutboundMailServiceTest {
 
         Contact contact = new Contact();
         contact.setId(UUID.randomUUID());
-        Project project = new Project();
-        project.setId(Project.DEFAULT_PROJECT_ID);
-        project.setName("Default Project");
+        Project project = gmailProject();
         project.setMailSubject("Outbound Test");
         project.setMailBody("Body line");
         project.setMailFrom("contact@shviltashvilebi.ge");
@@ -171,17 +156,9 @@ class OutboundMailServiceTest {
     void shouldRenderCustomPlaceholderInBodyForMessageAndHistory() throws Exception {
         greenMail.setUser("receiver@localhost", "receiver@localhost", "secret");
 
-        JavaMailSenderImpl sender = new JavaMailSenderImpl();
-        sender.setHost("127.0.0.1");
-        sender.setPort(ServerSetupTest.SMTP.getPort());
-        Properties javaMailProperties = sender.getJavaMailProperties();
-        javaMailProperties.put("mail.smtp.auth", "false");
-
         ContactMessageService contactMessageService = Mockito.mock(ContactMessageService.class);
 
-        Project project = new Project();
-        project.setId(UUID.randomUUID());
-        project.setName("Default Project");
+        Project project = gmailProject();
         project.setMailSubject("Outbound Test");
         project.setMailBody("Send to { department }");
         project.setMailFrom("sender@localhost");
@@ -206,7 +183,7 @@ class OutboundMailServiceTest {
 
         OutboundMailService service = new OutboundMailService(
                 contactMessageService,
-                ignored -> sender,
+                gmailRouter(),
                 mailTemplateRenderer(List.of(departmentColumn), List.of(department))
         );
 
@@ -235,15 +212,13 @@ class OutboundMailServiceTest {
     @Test
     void shouldRejectUnknownPlaceholderWithoutSending() throws Exception {
         ContactMessageService contactMessageService = Mockito.mock(ContactMessageService.class);
-        MailSenderFactory mailSenderFactory = Mockito.mock(MailSenderFactory.class);
         OutboundMailService service = new OutboundMailService(
                 contactMessageService,
-                mailSenderFactory,
+                gmailRouter(),
                 mailTemplateRenderer(List.of(), List.of())
         );
 
-        Project project = new Project();
-        project.setId(UUID.randomUUID());
+        Project project = gmailProject();
         project.setMailSubject("Attention to {Departmant}");
         project.setMailBody("Body line");
 
@@ -257,7 +232,6 @@ class OutboundMailServiceTest {
         assertThatThrownBy(() -> service.send(project, contact, new GeneratedLetter(letterDocx, letterPdf), List.of()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Unknown email template placeholder: {Departmant}");
-        Mockito.verifyNoInteractions(contactMessageService, mailSenderFactory);
     }
 
     @Test
@@ -270,6 +244,26 @@ class OutboundMailServiceTest {
         String rendered = mailTemplateRenderer(List.of(), List.of()).render("Note: {Note}.", project, contact);
 
         assertThat(rendered).isEqualTo("Note: .");
+    }
+
+    private Project gmailProject() {
+        Project project = new Project();
+        project.setId(Project.DEFAULT_PROJECT_ID);
+        project.setName("Default Project");
+        project.setMailTransport(MailTransportType.GMAIL);
+        return project;
+    }
+
+    private MailTransportRouter gmailRouter() {
+        JavaMailSenderImpl sender = new JavaMailSenderImpl();
+        sender.setHost("127.0.0.1");
+        sender.setPort(ServerSetupTest.SMTP.getPort());
+        Properties javaMailProperties = sender.getJavaMailProperties();
+        javaMailProperties.put("mail.smtp.auth", "false");
+
+        GmailSmtpMailTransport gmailTransport = new GmailSmtpMailTransport(project -> sender);
+        BrevoApiMailTransport brevoTransport = Mockito.mock(BrevoApiMailTransport.class);
+        return new MailTransportRouter(gmailTransport, brevoTransport);
     }
 
     private MailTemplateRenderer mailTemplateRenderer(

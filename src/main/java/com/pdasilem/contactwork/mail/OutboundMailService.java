@@ -5,31 +5,26 @@ import com.pdasilem.contactwork.history.ContactMessageService;
 import com.pdasilem.contactwork.project.Project;
 import com.pdasilem.contactwork.project.asset.MailAttachment;
 import com.pdasilem.contactwork.template.GeneratedLetter;
-import jakarta.mail.MessagingException;
-import jakarta.mail.internet.InternetAddress;
-import jakarta.mail.internet.MimeMessage;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.List;
-import org.springframework.core.io.UrlResource;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
 @Service
 public class OutboundMailService {
     private final ContactMessageService contactMessageService;
-    private final MailSenderFactory mailSenderFactory;
+    private final MailTransportRouter mailTransportRouter;
     private final MailTemplateRenderer mailTemplateRenderer;
 
     public OutboundMailService(
             ContactMessageService contactMessageService,
-            MailSenderFactory mailSenderFactory,
+            MailTransportRouter mailTransportRouter,
             MailTemplateRenderer mailTemplateRenderer
     ) {
         this.contactMessageService = contactMessageService;
-        this.mailSenderFactory = mailSenderFactory;
+        this.mailTransportRouter = mailTransportRouter;
         this.mailTemplateRenderer = mailTemplateRenderer;
     }
 
@@ -37,42 +32,43 @@ public class OutboundMailService {
         try {
             String subject = mailTemplateRenderer.render(project.getMailSubject(), project, contact);
             String body = mailTemplateRenderer.render(project.getMailBody(), project, contact);
-            JavaMailSender javaMailSender = mailSenderFactory.create(project);
-            MimeMessage mimeMessage = javaMailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
-            helper.setTo(contact.getEmail());
-            if (project.getMailFrom() != null && !project.getMailFrom().isBlank()) {
-                if (project.getMailFromName() != null && !project.getMailFromName().isBlank()) {
-                    helper.setFrom(new InternetAddress(project.getMailFrom(), project.getMailFromName(), "UTF-8"));
-                } else {
-                    helper.setFrom(project.getMailFrom());
-                }
-            }
-            helper.setSubject(subject);
-            helper.setText(body, false);
-            helper.addAttachment(
+
+            List<MailFileAttachment> fileAttachments = new ArrayList<>();
+            fileAttachments.add(new MailFileAttachment(
                     letterAttachmentName(project),
-                    new UrlResource(generatedLetter.pdfPath().toUri())
-            );
+                    Files.readAllBytes(generatedLetter.pdfPath())
+            ));
             for (MailAttachment attachment : attachments) {
-                helper.addAttachment(attachment.filename(), attachment.resource());
+                fileAttachments.add(new MailFileAttachment(
+                        attachment.filename(),
+                        attachment.resource().getInputStream().readAllBytes()
+                ));
             }
-            mimeMessage.saveChanges();
-            String messageId = mimeMessage.getMessageID();
-            javaMailSender.send(mimeMessage);
+
+            MailEnvelope envelope = new MailEnvelope(
+                    project.getMailFrom(),
+                    project.getMailFromName(),
+                    contact.getEmail(),
+                    subject,
+                    body,
+                    fileAttachments
+            );
+
+            MailSendResult result = mailTransportRouter.resolve(project).send(project, envelope);
+
             contactMessageService.recordOutbound(
                     project,
                     contact,
-                    messageId,
+                    result.messageId(),
                     subject,
                     body,
                     project.getMailFrom(),
                     contact.getEmail(),
                     OffsetDateTime.now()
             );
-            return messageId;
-        } catch (MessagingException | IOException ex) {
-            throw new IllegalStateException("Failed to send email to " + contact.getEmail(), ex);
+            return result.messageId();
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to read attachment for " + contact.getEmail(), ex);
         } finally {
             deleteSilently(generatedLetter.docxPath());
             deleteSilently(generatedLetter.pdfPath());
@@ -80,19 +76,15 @@ public class OutboundMailService {
         }
     }
 
+    public void verifyTransport(Project project) {
+        mailTransportRouter.resolve(project).verifyConnection(project);
+    }
+
     private String letterAttachmentName(Project project) {
         if (project.getLetterAttachmentFilename() == null || project.getLetterAttachmentFilename().isBlank()) {
             return "letter.pdf";
         }
         return project.getLetterAttachmentFilename();
-    }
-
-    public void verifySmtp(Project project) {
-        try {
-            mailSenderFactory.create(project).testConnection();
-        } catch (Exception ex) {
-            throw new IllegalStateException("Failed to connect to SMTP", ex);
-        }
     }
 
     private void deleteSilently(java.nio.file.Path path) {

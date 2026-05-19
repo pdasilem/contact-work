@@ -26,7 +26,18 @@ public record AppProperties(
     public record Mail(
             long sendDelayMs,
             @NotBlank String inboxSyncCron,
-            Gmail gmail
+            Gmail gmail,
+            Brevo brevo
+    ) {
+        public Mail {
+            if (brevo == null) {
+                brevo = new Brevo("");
+            }
+        }
+    }
+
+    public record Brevo(
+            String apiKey
     ) {
     }
 
