@@ -49,7 +49,8 @@ class OutboundMailServiceTest {
         OutboundMailService service = new OutboundMailService(
                 contactMessageService,
                 gmailRouter(),
-                mailTemplateRenderer(List.of(), List.of())
+                mailTemplateRenderer(List.of(), List.of()),
+                Mockito.mock(GmailImapService.class)
         );
 
         Path letterDocx = Files.createFile(tempDir.resolve("letter.docx"));
@@ -112,7 +113,8 @@ class OutboundMailServiceTest {
         OutboundMailService service = new OutboundMailService(
                 contactMessageService,
                 gmailRouter(),
-                mailTemplateRenderer(List.of(), List.of())
+                mailTemplateRenderer(List.of(), List.of()),
+                Mockito.mock(GmailImapService.class)
         );
 
         Path letterDocx = Files.createFile(tempDir.resolve("letter-with-name.docx"));
@@ -184,7 +186,8 @@ class OutboundMailServiceTest {
         OutboundMailService service = new OutboundMailService(
                 contactMessageService,
                 gmailRouter(),
-                mailTemplateRenderer(List.of(departmentColumn), List.of(department))
+                mailTemplateRenderer(List.of(departmentColumn), List.of(department)),
+                Mockito.mock(GmailImapService.class)
         );
 
         Path letterDocx = Files.createFile(tempDir.resolve("custom-body.docx"));
@@ -215,7 +218,8 @@ class OutboundMailServiceTest {
         OutboundMailService service = new OutboundMailService(
                 contactMessageService,
                 gmailRouter(),
-                mailTemplateRenderer(List.of(), List.of())
+                mailTemplateRenderer(List.of(), List.of()),
+                Mockito.mock(GmailImapService.class)
         );
 
         Project project = gmailProject();

@@ -187,7 +187,7 @@ class MailHealthServiceTest {
         }
 
         private RecordingOutboundMailService(List<String> events, String failure) {
-            super(null, null, null);
+            super(null, null, null, null);
             this.events = events;
             this.failure = failure;
         }
@@ -205,7 +205,7 @@ class MailHealthServiceTest {
         private final List<String> events;
 
         private RecordingInboxSyncService(List<String> events) {
-            super(null, null, null, null);
+            super(null, null, null, null, null);
             this.events = events;
         }
 

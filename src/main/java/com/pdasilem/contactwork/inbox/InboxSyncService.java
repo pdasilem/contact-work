@@ -11,6 +11,7 @@ import com.pdasilem.contactwork.conversation.MailboxMessage;
 import com.pdasilem.contactwork.conversation.MailboxMessageRepository;
 import com.pdasilem.contactwork.project.Project;
 import com.pdasilem.contactwork.project.ProjectService;
+import com.pdasilem.contactwork.mail.GmailImapService;
 import jakarta.mail.Address;
 import jakarta.mail.Folder;
 import jakarta.mail.Message;
@@ -18,7 +19,6 @@ import jakarta.mail.Message.RecipientType;
 import jakarta.mail.MessagingException;
 import jakarta.mail.Multipart;
 import jakarta.mail.Part;
-import jakarta.mail.Session;
 import jakarta.mail.Store;
 import jakarta.mail.internet.InternetAddress;
 import java.io.IOException;
@@ -34,7 +34,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Properties;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
@@ -51,24 +50,25 @@ import org.springframework.transaction.annotation.Transactional;
 public class InboxSyncService {
     private static final Logger log = LoggerFactory.getLogger(InboxSyncService.class);
     private static final Pattern MESSAGE_ID_PATTERN = Pattern.compile("<[^>]+>");
-    private static final String IMAP_HOST = "imap.gmail.com";
-    private static final int IMAP_PORT = 993;
 
     private final ContactRepository contactRepository;
     private final MailboxMessageRepository mailboxMessageRepository;
     private final ProjectService projectService;
     private final AppProperties appProperties;
+    private final GmailImapService gmailImapService;
 
     public InboxSyncService(
             ContactRepository contactRepository,
             MailboxMessageRepository mailboxMessageRepository,
             ProjectService projectService,
-            AppProperties appProperties
+            AppProperties appProperties,
+            GmailImapService gmailImapService
     ) {
         this.contactRepository = contactRepository;
         this.mailboxMessageRepository = mailboxMessageRepository;
         this.projectService = projectService;
         this.appProperties = appProperties;
+        this.gmailImapService = gmailImapService;
     }
 
     public void verifyConnections(UUID projectId) {
@@ -76,7 +76,7 @@ public class InboxSyncService {
         if (!isConfigured(project)) {
             throw new IllegalStateException("Project Gmail credentials are required before syncing");
         }
-        try (Store store = createImapStore(project)) {
+        try (Store store = gmailImapService.createImapStore(project)) {
             // Store is already connected in createImapStore.
         } catch (Exception ex) {
             throw new IllegalStateException("Failed to connect to IMAP", ex);
@@ -115,7 +115,7 @@ public class InboxSyncService {
 
         log.info("Starting mailbox sync for project {} contactId={} mailbox {} incrementalAfter={}",
                 projectId, scopedContact == null ? null : scopedContact.getId(), username, lastSyncAt);
-        try (Store store = createImapStore(project)) {
+        try (Store store = gmailImapService.createImapStore(project)) {
             for (FolderSpec folderSpec : folderSpecs()) {
                 scanFolder(store, folderSpec, project, contactsByEmail, lastSyncAt, fetched);
             }
@@ -390,23 +390,7 @@ public class InboxSyncService {
         return value == null ? null : value.trim().toLowerCase();
     }
 
-    private Store createImapStore(Project project) throws Exception {
-        Properties properties = new Properties();
-        properties.put("mail.store.protocol", "imaps");
-        properties.put("mail.imaps.host", IMAP_HOST);
-        properties.put("mail.imaps.port", String.valueOf(IMAP_PORT));
-        properties.put("mail.imaps.ssl.enable", "true");
-        Session session = Session.getInstance(properties);
-        Store store = session.getStore("imaps");
-        store.connect(
-                IMAP_HOST,
-                resolvedGmailUsername(project),
-                resolvedGmailAppPassword(project)
-        );
-        return store;
-    }
-
-    boolean isConfigured(Project project) {
+boolean isConfigured(Project project) {
         return resolvedGmailUsername(project) != null
                 && resolvedGmailAppPassword(project) != null;
     }

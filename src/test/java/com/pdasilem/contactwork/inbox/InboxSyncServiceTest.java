@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.pdasilem.contactwork.config.AppProperties;
+import com.pdasilem.contactwork.mail.GmailImapService;
 import com.pdasilem.contactwork.contact.Contact;
 import com.pdasilem.contactwork.contact.ContactRepository;
 import com.pdasilem.contactwork.conversation.MailboxMessageRepository;
@@ -103,15 +104,17 @@ class InboxSyncServiceTest {
             ContactRepository contactRepository,
             MailboxMessageRepository mailboxMessageRepository
     ) {
+        AppProperties appProperties = new AppProperties(
+                new AppProperties.Resources("/tmp"),
+                new AppProperties.Mail(0, "0 */5 * * * *", null, null),
+                null
+        );
         return new InboxSyncService(
                 contactRepository,
                 mailboxMessageRepository,
                 projectService,
-                new AppProperties(
-                        new AppProperties.Resources("/tmp"),
-                        new AppProperties.Mail(0, "0 */5 * * * *", null, null),
-                        null
-                )
+                appProperties,
+                new GmailImapService(appProperties)
         );
     }
 

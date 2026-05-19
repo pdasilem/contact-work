@@ -2,6 +2,7 @@ package com.pdasilem.contactwork.mail;
 
 import com.pdasilem.contactwork.contact.Contact;
 import com.pdasilem.contactwork.history.ContactMessageService;
+import com.pdasilem.contactwork.project.MailTransportType;
 import com.pdasilem.contactwork.project.Project;
 import com.pdasilem.contactwork.project.asset.MailAttachment;
 import com.pdasilem.contactwork.template.GeneratedLetter;
@@ -17,15 +18,18 @@ public class OutboundMailService {
     private final ContactMessageService contactMessageService;
     private final MailTransportRouter mailTransportRouter;
     private final MailTemplateRenderer mailTemplateRenderer;
+    private final GmailImapService gmailImapService;
 
     public OutboundMailService(
             ContactMessageService contactMessageService,
             MailTransportRouter mailTransportRouter,
-            MailTemplateRenderer mailTemplateRenderer
+            MailTemplateRenderer mailTemplateRenderer,
+            GmailImapService gmailImapService
     ) {
         this.contactMessageService = contactMessageService;
         this.mailTransportRouter = mailTransportRouter;
         this.mailTemplateRenderer = mailTemplateRenderer;
+        this.gmailImapService = gmailImapService;
     }
 
     public String send(Project project, Contact contact, GeneratedLetter generatedLetter, List<MailAttachment> attachments) {
@@ -55,6 +59,10 @@ public class OutboundMailService {
             );
 
             MailSendResult result = mailTransportRouter.resolve(project).send(project, envelope);
+
+            if (project.getMailTransport() == MailTransportType.BREVO) {
+                gmailImapService.appendToSentFolder(project, envelope, result.messageId());
+            }
 
             contactMessageService.recordOutbound(
                     project,
