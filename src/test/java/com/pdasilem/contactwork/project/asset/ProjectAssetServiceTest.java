@@ -165,6 +165,24 @@ class ProjectAssetServiceTest {
         verify(projectAssetRepository, never()).delete(any(ProjectAsset.class));
     }
 
+    @Test
+    void overwriteActiveLetterForSystemUsesSystemProjectAccess() throws Exception {
+        Project project = project();
+        ProjectAsset asset = asset(project, ProjectAssetType.LETTER_TEMPLATE, "system-letter.docx", "old");
+        ProjectAssetService service = new ProjectAssetService(projectAssetRepository, projectService, appProperties());
+        when(projectService.getProjectForSystem(project.getId())).thenReturn(project);
+        when(projectAssetRepository.findFirstByProjectIdAndTypeAndActiveTrueOrderByCreatedAtDesc(
+                project.getId(), ProjectAssetType.LETTER_TEMPLATE)).thenReturn(Optional.of(asset));
+        when(projectAssetRepository.save(any(ProjectAsset.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        ProjectAsset updated = service.overwriteActiveLetterForSystem(project.getId(), "updated".getBytes(StandardCharsets.UTF_8));
+
+        assertThat(updated).isSameAs(asset);
+        assertThat(Files.readString(Path.of(asset.getStoredPath()))).isEqualTo("updated");
+        verify(projectService).getProjectForSystem(project.getId());
+    }
+
     private Project project() {
         Project project = new Project();
         project.setId(Project.DEFAULT_PROJECT_ID);

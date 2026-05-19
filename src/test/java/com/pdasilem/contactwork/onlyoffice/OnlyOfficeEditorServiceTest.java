@@ -101,7 +101,7 @@ class OnlyOfficeEditorServiceTest {
         }
 
         ArgumentCaptor<byte[]> bytes = ArgumentCaptor.forClass(byte[].class);
-        verify(projectAssetService, times(2)).overwriteActiveLetter(eq(projectId), bytes.capture());
+        verify(projectAssetService, times(2)).overwriteActiveLetterForSystem(eq(projectId), bytes.capture());
         assertThat(bytes.getAllValues()).allSatisfy(value -> assertThat(value).isEqualTo(updated));
     }
 

@@ -67,13 +67,13 @@ public class OnlyOfficeController {
     @GetMapping("/onlyoffice/projects/{projectId}/document")
     public ResponseEntity<byte[]> document(@PathVariable UUID projectId, @RequestParam(required = false) String token) {
         requireValidToken(accessTokenService.isValidDocumentToken(projectId, token));
-        ProjectAsset asset = onlyOfficeEditorService.activeLetter(projectId);
+        ProjectAsset asset = onlyOfficeEditorService.activeLetterForSystem(projectId);
         return ResponseEntity.ok()
                 .contentType(DOCX_MEDIA_TYPE)
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline()
                         .filename(asset.getOriginalFilename())
                         .build().toString())
-                .body(onlyOfficeEditorService.activeLetterBytes(projectId));
+                .body(onlyOfficeEditorService.activeLetterBytesForSystem(projectId));
     }
 
     @PostMapping("/onlyoffice/projects/{projectId}/callback")

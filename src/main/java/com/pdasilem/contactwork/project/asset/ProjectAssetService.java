@@ -103,10 +103,19 @@ public class ProjectAssetService {
 
     @Transactional
     public ProjectAsset overwriteActiveLetter(UUID projectId, byte[] bytes) {
+        return overwriteActiveLetter(projectId, bytes, false);
+    }
+
+    @Transactional
+    public ProjectAsset overwriteActiveLetterForSystem(UUID projectId, byte[] bytes) {
+        return overwriteActiveLetter(projectId, bytes, true);
+    }
+
+    private ProjectAsset overwriteActiveLetter(UUID projectId, byte[] bytes, boolean systemAccess) {
         if (bytes == null || bytes.length == 0) {
             throw new IllegalArgumentException("Updated letter template is empty");
         }
-        ProjectAsset asset = activeLetterOrThrow(projectId);
+        ProjectAsset asset = systemAccess ? activeLetterOrThrowForSystem(projectId) : activeLetterOrThrow(projectId);
         try {
             Files.write(Path.of(asset.getStoredPath()), bytes);
         } catch (IOException ex) {

@@ -60,8 +60,21 @@ public class OnlyOfficeEditorService {
         return projectAssetService.activeLetterOrThrow(projectId);
     }
 
+    public ProjectAsset activeLetterForSystem(UUID projectId) {
+        return projectAssetService.activeLetterOrThrowForSystem(projectId);
+    }
+
     public byte[] activeLetterBytes(UUID projectId) {
         ProjectAsset asset = activeLetter(projectId);
+        return readActiveLetterBytes(asset);
+    }
+
+    public byte[] activeLetterBytesForSystem(UUID projectId) {
+        ProjectAsset asset = activeLetterForSystem(projectId);
+        return readActiveLetterBytes(asset);
+    }
+
+    private byte[] readActiveLetterBytes(ProjectAsset asset) {
         try {
             return Files.readAllBytes(Path.of(asset.getStoredPath()));
         } catch (Exception ex) {
@@ -80,7 +93,7 @@ public class OnlyOfficeEditorService {
                         .uri(downloadUri)
                         .retrieve()
                         .body(byte[].class);
-                projectAssetService.overwriteActiveLetter(projectId, updated);
+                projectAssetService.overwriteActiveLetterForSystem(projectId, updated);
             } catch (Exception ex) {
                 log.warn("ONLYOFFICE callback save failed: projectId={}, status={}, callbackUrl={}, downloadUrl={}",
                         projectId, request.status(), request.url(), downloadUri, ex);
