@@ -25,11 +25,6 @@ public class BrevoApiMailTransport implements MailTransport {
                 .build();
     }
 
-    BrevoApiMailTransport(RestClient restClient, AppProperties appProperties) {
-        this.restClient = restClient;
-        this.appProperties = appProperties;
-    }
-
     @Override
     public MailSendResult send(Project project, MailEnvelope envelope) {
         String apiKey = requireApiKey();
