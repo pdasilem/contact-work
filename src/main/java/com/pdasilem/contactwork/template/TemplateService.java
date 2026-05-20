@@ -1,6 +1,8 @@
 package com.pdasilem.contactwork.template;
 
 import com.pdasilem.contactwork.config.AppProperties;
+import com.pdasilem.contactwork.contact.Contact;
+import com.pdasilem.contactwork.mail.MailTemplateRenderer;
 import com.pdasilem.contactwork.project.Project;
 import java.io.IOException;
 import java.io.InputStream;
@@ -19,32 +21,38 @@ import org.springframework.stereotype.Service;
 @Service
 public class TemplateService {
     private static final Logger log = LoggerFactory.getLogger(TemplateService.class);
-    private static final String CONTACT_NAME_PLACEHOLDER = "{{contact_name}}";
     private static final String SUBJECT_PREFIX = "Subject";
     private static final int SUBJECT_SPACING_BEFORE_TWIPS = 240;
 
     private final AppProperties appProperties;
     private final ResourceLoader resourceLoader;
     private final PdfConversionService pdfConversionService;
+    private final MailTemplateRenderer mailTemplateRenderer;
 
-    public TemplateService(AppProperties appProperties, ResourceLoader resourceLoader, PdfConversionService pdfConversionService) {
+    public TemplateService(
+            AppProperties appProperties,
+            ResourceLoader resourceLoader,
+            PdfConversionService pdfConversionService,
+            MailTemplateRenderer mailTemplateRenderer
+    ) {
         this.appProperties = appProperties;
         this.resourceLoader = resourceLoader;
         this.pdfConversionService = pdfConversionService;
+        this.mailTemplateRenderer = mailTemplateRenderer;
     }
 
-    public GeneratedLetter generateLetterPdf(Project project, String contactName) {
-        return generateLetterPdf(project, resourceLoader.getResource(project.getLetterTemplate()), contactName);
+    public GeneratedLetter generateLetterPdf(Project project, Contact contact) {
+        return generateLetterPdf(project, resourceLoader.getResource(project.getLetterTemplate()), contact);
     }
 
-    public GeneratedLetter generateLetterPdf(Project project, Resource templateResource, String contactName) {
+    public GeneratedLetter generateLetterPdf(Project project, Resource templateResource, Contact contact) {
         try {
             Path workingDir = Files.createDirectories(Path.of(appProperties.resources().workingDir()));
             Path jobDir = Files.createTempDirectory(workingDir, "letter-");
             Path docxPath = jobDir.resolve("letter.docx");
             try (InputStream inputStream = templateResource.getInputStream();
                  XWPFDocument document = new XWPFDocument(inputStream)) {
-                replaceInDocument(document, contactName);
+                replaceInDocument(document, project, contact);
                 applyLayoutTweaks(document);
                 applySmartQuotes(document);
                 document.write(Files.newOutputStream(docxPath));
@@ -57,26 +65,34 @@ public class TemplateService {
         }
     }
 
-    private void replaceInDocument(XWPFDocument document, String contactName) {
+    private void replaceInDocument(XWPFDocument document, Project project, Contact contact) {
         for (XWPFParagraph paragraph : document.getParagraphs()) {
-            replaceInParagraph(paragraph, contactName);
+            replaceInParagraph(paragraph, project, contact);
         }
         for (var table : document.getTables()) {
             table.getRows().forEach(row ->
                     row.getTableCells().forEach(cell ->
-                            cell.getParagraphs().forEach(paragraph -> replaceInParagraph(paragraph, contactName))));
+                            cell.getParagraphs().forEach(paragraph -> replaceInParagraph(paragraph, project, contact))));
         }
     }
 
-    private void replaceInParagraph(XWPFParagraph paragraph, String contactName) {
-        for (XWPFRun run : paragraph.getRuns()) {
-            String text = run.getText(0);
-            if (text == null || !text.contains(CONTACT_NAME_PLACEHOLDER)) {
-                continue;
-            }
-            run.setText(text.replace(CONTACT_NAME_PLACEHOLDER, contactName), 0);
-            log.debug("Applied contact name placeholder for {}", contactName);
+    private void replaceInParagraph(XWPFParagraph paragraph, Project project, Contact contact) {
+        String fullText = paragraph.getRuns().stream()
+                .map(run -> run.getText(0))
+                .filter(text -> text != null)
+                .reduce("", String::concat);
+        if (!fullText.contains("{{")) {
             return;
+        }
+        String replaced = mailTemplateRenderer.render(fullText, project, contact);
+        List<XWPFRun> runs = paragraph.getRuns();
+        for (int i = runs.size() - 1; i > 0; i--) {
+            paragraph.removeRun(i);
+        }
+        if (runs.isEmpty()) {
+            paragraph.createRun().setText(replaced, 0);
+        } else {
+            runs.getFirst().setText(replaced, 0);
         }
     }
 

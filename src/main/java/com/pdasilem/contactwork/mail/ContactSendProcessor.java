@@ -77,7 +77,7 @@ public class ContactSendProcessor {
                     systemAccess
                             ? projectAssetService.activeLetterResourceForSystem(projectId)
                             : projectAssetService.activeLetterResource(projectId),
-                    contact.getContactName()
+                    contact
             );
             log.info("Generated PDF for contact {}", contactId);
 

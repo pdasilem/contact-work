@@ -18,7 +18,7 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class MailTemplateRenderer {
-    private static final Pattern PLACEHOLDER = Pattern.compile("\\{([^{}]+)}");
+    private static final Pattern PLACEHOLDER = Pattern.compile("\\{\\{([^{}]+)}}");
 
     private final ContactCustomFieldRepository contactCustomFieldRepository;
     private final ProjectContactColumnRepository projectContactColumnRepository;
@@ -42,7 +42,7 @@ public class MailTemplateRenderer {
             String placeholder = matcher.group(1).trim();
             Supplier<String> value = values.get(normalize(placeholder));
             if (value == null) {
-                throw new IllegalArgumentException("Unknown email template placeholder: {" + placeholder + "}");
+                throw new IllegalArgumentException("Unknown email template placeholder: {{" + placeholder + "}}");
             }
             matcher.appendReplacement(rendered, Matcher.quoteReplacement(blankIfNull(value.get())));
         }

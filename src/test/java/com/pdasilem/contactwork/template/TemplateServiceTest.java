@@ -5,10 +5,16 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.pdasilem.contactwork.config.AppProperties;
+import com.pdasilem.contactwork.contact.Contact;
+import com.pdasilem.contactwork.contact.ContactCustomFieldRepository;
+import com.pdasilem.contactwork.contact.ProjectContactColumnRepository;
+import com.pdasilem.contactwork.mail.MailTemplateRenderer;
 import com.pdasilem.contactwork.project.Project;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.UUID;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -26,17 +32,31 @@ class TemplateServiceTest {
         when(pdfConversionService.convertToPdf(org.mockito.ArgumentMatchers.any())).thenReturn(fakePdf);
 
         AppProperties properties = new AppProperties(
-                new AppProperties.Resources(
-                        tempDir.toString()
-                ),
+                new AppProperties.Resources(tempDir.toString()),
                 new AppProperties.Mail(0, "0 */5 * * * *", null, null),
                 null
         );
 
+        ContactCustomFieldRepository customFieldRepo = mock(ContactCustomFieldRepository.class);
+        ProjectContactColumnRepository columnRepo = mock(ProjectContactColumnRepository.class);
+        when(customFieldRepo.findByProjectIdAndContactId(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(List.of());
+        when(columnRepo.findByProjectIdOrderByColumnOrderAsc(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(List.of());
+        MailTemplateRenderer mailTemplateRenderer = new MailTemplateRenderer(customFieldRepo, columnRepo);
+
         Project project = new Project();
+        project.setId(UUID.randomUUID());
         project.setLetterTemplate("classpath:data/Letter.docx");
-        TemplateService service = new TemplateService(properties, new DefaultResourceLoader(), pdfConversionService);
-        GeneratedLetter generatedLetter = service.generateLetterPdf(project, "Alice Example");
+
+        Contact contact = new Contact();
+        contact.setId(UUID.randomUUID());
+        contact.setContactName("Alice Example");
+        contact.setOrganizationName("Test Org");
+        contact.setEmail("alice@example.com");
+
+        TemplateService service = new TemplateService(properties, new DefaultResourceLoader(), pdfConversionService, mailTemplateRenderer);
+        GeneratedLetter generatedLetter = service.generateLetterPdf(project, contact);
 
         try (InputStream inputStream = Files.newInputStream(generatedLetter.docxPath());
              XWPFDocument document = new XWPFDocument(inputStream)) {

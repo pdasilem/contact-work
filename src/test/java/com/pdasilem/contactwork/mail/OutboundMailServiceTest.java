@@ -68,7 +68,7 @@ class OutboundMailServiceTest {
         };
         contact.setId(UUID.randomUUID());
         Project project = gmailProject();
-        project.setMailSubject("Attention to {Contact}");
+        project.setMailSubject("Attention to {{Contact}}");
         project.setMailBody("Body line");
         project.setMailFrom("sender@localhost");
         project.setLetterAttachmentFilename("letter.pdf");
@@ -162,7 +162,7 @@ class OutboundMailServiceTest {
 
         Project project = gmailProject();
         project.setMailSubject("Outbound Test");
-        project.setMailBody("Send to { department }");
+        project.setMailBody("Send to {{ department }}");
         project.setMailFrom("sender@localhost");
         project.setLetterAttachmentFilename("letter.pdf");
 
@@ -223,7 +223,7 @@ class OutboundMailServiceTest {
         );
 
         Project project = gmailProject();
-        project.setMailSubject("Attention to {Departmant}");
+        project.setMailSubject("Attention to {{Departmant}}");
         project.setMailBody("Body line");
 
         Contact contact = new Contact();
@@ -235,7 +235,7 @@ class OutboundMailServiceTest {
 
         assertThatThrownBy(() -> service.send(project, contact, new GeneratedLetter(letterDocx, letterPdf), List.of()))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Unknown email template placeholder: {Departmant}");
+                .hasMessage("Unknown email template placeholder: {{Departmant}}");
     }
 
     @Test
@@ -245,7 +245,7 @@ class OutboundMailServiceTest {
         Contact contact = new Contact();
         contact.setId(UUID.randomUUID());
 
-        String rendered = mailTemplateRenderer(List.of(), List.of()).render("Note: {Note}.", project, contact);
+        String rendered = mailTemplateRenderer(List.of(), List.of()).render("Note: {{Note}}.", project, contact);
 
         assertThat(rendered).isEqualTo("Note: .");
     }

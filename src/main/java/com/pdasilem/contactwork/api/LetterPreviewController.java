@@ -44,7 +44,7 @@ public class LetterPreviewController {
         GeneratedLetter generatedLetter = templateService.generateLetterPdf(
                 contact.getProject(),
                 projectAssetService.activeLetterResource(projectId),
-                contact.getContactName()
+                contact
         );
         try {
             byte[] pdfBytes = Files.readAllBytes(generatedLetter.pdfPath());
