@@ -21,6 +21,7 @@ spring:
             model: ${GOOGLE_GENAI_MODEL:gemini-2.0-flash}
             temperature: ${GOOGLE_GENAI_TEMPERATURE:0.2}
         embedding:
+          api-key: ${GOOGLE_API_KEY:}
           text:
             options:
               model: text-embedding-004
