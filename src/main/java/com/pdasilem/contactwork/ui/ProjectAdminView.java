@@ -773,6 +773,7 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
         TextField filter = new TextField();
         filter.setPlaceholder("Filter by email or organization");
         filter.setPrefixComponent(VaadinIcon.SEARCH.create());
+        filter.setValueChangeTimeout(300);
         filter.addValueChangeListener(event -> refreshContacts(event.getValue()));
 
         Button sync = new Button("Sync inbox", VaadinIcon.INBOX.create(), event -> runInboxSync());
@@ -849,12 +850,24 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
         }
     }
 
+    private static final Map<String, String> SORTABLE_COLUMNS = Map.of(
+            "email", "email",
+            "organization", "organizationName",
+            "status", "status"
+    );
+
     private void configureContactColumn(Grid.Column<Contact> column, String key, String header, int flexGrow) {
         column.setKey(key)
                 .setHeader(header)
                 .setAutoWidth(true)
                 .setFlexGrow(flexGrow)
                 .setResizable(true);
+        String columnPrefix = key.contains(":") ? key.substring(0, key.indexOf(':')) : key;
+        String sortProperty = SORTABLE_COLUMNS.get(columnPrefix);
+        if (sortProperty != null) {
+            column.setSortable(true);
+            column.setSortProperty(sortProperty);
+        }
         column.getElement().executeJs("""
                 const width = window.localStorage.getItem($0);
                 if (width) {
@@ -1388,9 +1401,32 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
             return;
         }
         String value = blankToNull(filter);
-        List<Contact> contacts = contactService.searchContacts(selectedProject.getId(), value);
-        contactsGrid.setItems(contacts);
-        contactsTitle.setText("Contacts (" + contacts.size() + " records)");
+        UUID projectId = selectedProject.getId();
+        long totalCount = contactService.countContacts(projectId, value);
+        contactsTitle.setText("Contacts (" + totalCount + " records)");
+        contactsGrid.setItems(query -> {
+            if (selectedProject == null || !selectedProject.getId().equals(projectId)) {
+                return java.util.stream.Stream.empty();
+            }
+            org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(
+                    query.getPage(), query.getPageSize(), toSpringSort(query.getSortOrders())
+            );
+            return contactService.searchContacts(projectId, value, pageable).getContent().stream();
+        });
+    }
+
+    private static final java.util.Set<String> ALLOWED_SORT_PROPERTIES = java.util.Set.copyOf(SORTABLE_COLUMNS.values());
+
+    private org.springframework.data.domain.Sort toSpringSort(List<com.vaadin.flow.data.provider.QuerySortOrder> orders) {
+        if (orders == null || orders.isEmpty()) {
+            return org.springframework.data.domain.Sort.by("createdAt").descending();
+        }
+        return org.springframework.data.domain.Sort.by(orders.stream()
+                .filter(order -> ALLOWED_SORT_PROPERTIES.contains(order.getSorted()))
+                .map(order -> order.getDirection() == com.vaadin.flow.data.provider.SortDirection.ASCENDING
+                        ? org.springframework.data.domain.Sort.Order.asc(order.getSorted())
+                        : org.springframework.data.domain.Sort.Order.desc(order.getSorted()))
+                .toList());
     }
 
     private void editSelectedContact() {

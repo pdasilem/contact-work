@@ -10,6 +10,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -55,8 +57,19 @@ public class ContactService {
     }
 
     public List<Contact> searchContacts(UUID projectId, String search) {
-        projectService.getProject(projectId);
-        Specification<Contact> specification = (root, query, criteriaBuilder) -> {
+        return contactRepository.findAll(searchSpecification(projectId, search));
+    }
+
+    public Page<Contact> searchContacts(UUID projectId, String search, Pageable pageable) {
+        return contactRepository.findAll(searchSpecification(projectId, search), pageable);
+    }
+
+    public long countContacts(UUID projectId, String search) {
+        return contactRepository.count(searchSpecification(projectId, search));
+    }
+
+    private Specification<Contact> searchSpecification(UUID projectId, String search) {
+        return (root, query, criteriaBuilder) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(criteriaBuilder.equal(root.get("project").get("id"), projectId));
             predicates.add(criteriaBuilder.isNull(root.get("deletedAt")));
@@ -70,7 +83,6 @@ public class ContactService {
             }
             return criteriaBuilder.and(predicates.toArray(Predicate[]::new));
         };
-        return contactRepository.findAll(specification);
     }
 
     public Contact getContact(UUID projectId, UUID id) {
