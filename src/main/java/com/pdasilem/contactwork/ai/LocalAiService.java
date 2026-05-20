@@ -17,6 +17,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
@@ -25,7 +27,10 @@ import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.google.genai.GoogleGenAiChatModel;
 import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
 import org.springframework.ai.ollama.OllamaChatModel;
+import org.springframework.ai.document.Document;
 import org.springframework.ai.ollama.api.OllamaChatOptions;
+import org.springframework.ai.vectorstore.SearchRequest;
+import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -34,6 +39,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class LocalAiService {
 
+    private static final Logger log = LoggerFactory.getLogger(LocalAiService.class);
     private static final int MAX_HISTORY_CHARS = 6_000;
     private static final int MAX_CONTACT_CONTEXT_CHARS = 12_000;
     private static final int MAX_SESSION_TITLE_LENGTH = 120;
@@ -49,6 +55,7 @@ public class LocalAiService {
     private final ContactConversationSummaryRepository summaryRepository;
     private final AiChatSessionRepository sessionRepository;
     private final AiChatMessageRepository messageRepository;
+    private final VectorStore vectorStore;
 
     @Autowired
     public LocalAiService(
@@ -61,7 +68,8 @@ public class LocalAiService {
             MailboxMessageRepository mailboxMessageRepository,
             ContactConversationSummaryRepository summaryRepository,
             AiChatSessionRepository sessionRepository,
-            AiChatMessageRepository messageRepository
+            AiChatMessageRepository messageRepository,
+            VectorStore vectorStore
     ) {
         this.ollamaChatModel = ollamaChatModel;
         this.googleChatModel = googleChatModel;
@@ -73,6 +81,7 @@ public class LocalAiService {
         this.summaryRepository = summaryRepository;
         this.sessionRepository = sessionRepository;
         this.messageRepository = messageRepository;
+        this.vectorStore = vectorStore;
     }
 
     public Optional<ContactConversationSummary> findSummary(UUID contactId) {
@@ -135,18 +144,22 @@ public class LocalAiService {
         Project project = projectService.getProject(projectId);
         AiChatSession session = sessionRepository.findFirstByScopeAndProjectIdAndArchivedAtIsNullOrderByUpdatedAtDesc(AiChatScope.PROJECT, projectId)
                 .orElseGet(() -> newProjectSession(project));
+        String context = projectContext(project) + "\n\n--- Relevant messages ---\n"
+                + retrieveRelevantMessages(projectId, null, question);
         return ask(session, projectService.aiSystemPrompt(project) + "\n\n"
                         + "Project AI scope: answer about this one project. Use only the provided ContactWork context.",
-                projectContext(project), question, project);
+                context, question, project);
     }
 
     @Transactional
     public AiChatMessage askProject(UUID projectId, UUID sessionId, String question) {
         Project project = projectService.getProject(projectId);
         AiChatSession session = sessionId == null ? newProjectSession(project) : projectSession(projectId, sessionId);
+        String context = projectContext(project) + "\n\n--- Relevant messages ---\n"
+                + retrieveRelevantMessages(projectId, null, question);
         return ask(session, projectService.aiSystemPrompt(project) + "\n\n"
                         + "Project AI scope: answer about this one project. Use only the provided ContactWork context.",
-                projectContext(project), question, project);
+                context, question, project);
     }
 
     @Transactional
@@ -155,10 +168,12 @@ public class LocalAiService {
         Contact contact = contactService.getContact(projectId, contactId);
         AiChatSession session = sessionRepository.findFirstByScopeAndContactIdAndArchivedAtIsNullOrderByUpdatedAtDesc(AiChatScope.CONTACT, contactId)
                 .orElseGet(() -> newContactSession(contact));
+        String context = "projectId=" + projectId + "\ncontactId=" + contactId
+                + "\n\n--- Contact messages ---\n"
+                + retrieveRelevantMessages(projectId, contactId, question);
         return ask(session, projectService.aiSystemPrompt(project) + "\n\n"
                         + "Contact AI scope: answer about one contact only. Use only this contact conversation. Never mutate statuses.",
-                "projectId=" + projectId + "\ncontactId=" + contactId + "\n" + contactConversation(projectId, contactId),
-                question, project);
+                context, question, project);
     }
 
     @Transactional
@@ -166,10 +181,12 @@ public class LocalAiService {
         Project project = projectService.getProject(projectId);
         Contact contact = contactService.getContact(projectId, contactId);
         AiChatSession session = sessionId == null ? newContactSession(contact) : contactSession(projectId, contactId, sessionId);
+        String context = "projectId=" + projectId + "\ncontactId=" + contactId
+                + "\n\n--- Contact messages ---\n"
+                + retrieveRelevantMessages(projectId, contactId, question);
         return ask(session, projectService.aiSystemPrompt(project) + "\n\n"
                         + "Contact AI scope: answer about one contact only. Use only this contact conversation. Never mutate statuses.",
-                "projectId=" + projectId + "\ncontactId=" + contactId + "\n" + contactConversation(projectId, contactId),
-                question, project);
+                context, question, project);
     }
 
     @Transactional
@@ -296,6 +313,32 @@ public class LocalAiService {
         String conversation = boundedNewest(messages, MAX_CONTACT_CONTEXT_CHARS,
                 "[Older mailbox messages omitted due to context limit]");
         return conversation.isBlank() ? "No mailbox conversation." : conversation;
+    }
+
+    private String retrieveRelevantMessages(UUID projectId, UUID contactId, String question) {
+        try {
+            String filter = "projectId == '" + projectId + "'";
+            if (contactId != null) {
+                filter += " && contactId == '" + contactId + "'";
+            }
+            List<Document> docs = vectorStore.similaritySearch(
+                    SearchRequest.builder()
+                            .query(question)
+                            .topK(contactId != null ? 15 : 10)
+                            .similarityThreshold(0.4)
+                            .filterExpression(filter)
+                            .build()
+            );
+            if (docs.isEmpty()) {
+                return "No relevant messages found.";
+            }
+            return docs.stream()
+                    .map(Document::getText)
+                    .reduce("", (left, right) -> left.isBlank() ? right : left + "\n---\n" + right);
+        } catch (Exception ex) {
+            log.warn("Vector search failed for projectId={}: {}", projectId, ex.getMessage(), ex);
+            return "Message search unavailable.";
+        }
     }
 
     private String boundedNewest(List<String> items, int maxChars, String omissionNote) {

@@ -18,6 +18,16 @@ spring:
           options:
             model: ${GOOGLE_GENAI_MODEL:gemini-2.0-flash}
             temperature: ${GOOGLE_GENAI_TEMPERATURE:0.2}
+        embedding:
+          text:
+            options:
+              model: text-embedding-004
+    vectorstore:
+      pgvector:
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 768
+        initialize-schema: true
   servlet:
     multipart:
       max-file-size: 10MB

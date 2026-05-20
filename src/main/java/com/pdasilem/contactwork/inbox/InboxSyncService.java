@@ -11,6 +11,7 @@ import com.pdasilem.contactwork.conversation.MailboxMessage;
 import com.pdasilem.contactwork.conversation.MailboxMessageRepository;
 import com.pdasilem.contactwork.project.Project;
 import com.pdasilem.contactwork.project.ProjectService;
+import com.pdasilem.contactwork.ai.MessageVectorIndexer;
 import com.pdasilem.contactwork.mail.GmailImapService;
 import jakarta.mail.Address;
 import jakarta.mail.Folder;
@@ -56,19 +57,22 @@ public class InboxSyncService {
     private final ProjectService projectService;
     private final AppProperties appProperties;
     private final GmailImapService gmailImapService;
+    private final MessageVectorIndexer messageVectorIndexer;
 
     public InboxSyncService(
             ContactRepository contactRepository,
             MailboxMessageRepository mailboxMessageRepository,
             ProjectService projectService,
             AppProperties appProperties,
-            GmailImapService gmailImapService
+            GmailImapService gmailImapService,
+            MessageVectorIndexer messageVectorIndexer
     ) {
         this.contactRepository = contactRepository;
         this.mailboxMessageRepository = mailboxMessageRepository;
         this.projectService = projectService;
         this.appProperties = appProperties;
         this.gmailImapService = gmailImapService;
+        this.messageVectorIndexer = messageVectorIndexer;
     }
 
     public void verifyConnections(UUID projectId) {
@@ -123,6 +127,7 @@ public class InboxSyncService {
             throw new IllegalStateException("Failed to sync mailbox", ex);
         }
 
+        List<MailboxMessage> newMessages = new ArrayList<>();
         int savedCount = 0;
         int skippedDuplicateCount = 0;
         for (FetchedMailboxMessage message : fetched) {
@@ -130,7 +135,8 @@ public class InboxSyncService {
                 skippedDuplicateCount++;
                 continue;
             }
-            mailboxMessageRepository.save(toEntity(project, message));
+            MailboxMessage saved = mailboxMessageRepository.save(toEntity(project, message));
+            newMessages.add(saved);
             applyStatusRules(message);
             savedCount++;
         }
@@ -149,6 +155,10 @@ public class InboxSyncService {
                 skippedDuplicateCount,
                 markProjectSynced ? syncCompletedAt : project.getLastMailSyncAt()
         );
+
+        if (!newMessages.isEmpty()) {
+            tryIndexMessages(newMessages);
+        }
     }
 
     private void scanFolder(
@@ -401,6 +411,17 @@ boolean isConfigured(Project project) {
 
     private String resolvedGmailAppPassword(Project project) {
         return blankToNull(project.getGmailAppPassword());
+    }
+
+    private void tryIndexMessages(List<MailboxMessage> messages) {
+        try {
+            for (MailboxMessage message : messages) {
+                messageVectorIndexer.index(message);
+            }
+            log.info("Vector indexed {} new messages", messages.size());
+        } catch (Exception ex) {
+            log.warn("Failed to index messages in vector store: {}", ex.getMessage());
+        }
     }
 
     private String blankToNull(String value) {

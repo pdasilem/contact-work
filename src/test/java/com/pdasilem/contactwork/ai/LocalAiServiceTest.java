@@ -72,7 +72,8 @@ class LocalAiServiceTest {
                 proxy(MailboxMessageRepository.class, invocation -> defaultValue(invocation.getMethod().getReturnType())),
                 proxy(ContactConversationSummaryRepository.class, invocation -> defaultValue(invocation.getMethod().getReturnType())),
                 sessionRepository,
-                messageRepository
+                messageRepository,
+                null
         );
 
         AiChatMessage answer = service.askProject(project.getId(), "What changed?");
@@ -106,7 +107,8 @@ class LocalAiServiceTest {
                 proxy(MailboxMessageRepository.class, invocation -> defaultValue(invocation.getMethod().getReturnType())),
                 proxy(ContactConversationSummaryRepository.class, invocation -> defaultValue(invocation.getMethod().getReturnType())),
                 sessionRepository(),
-                messageRepository()
+                messageRepository(),
+                null
         );
 
         service.askProject(project.getId(), "Question?");
@@ -151,7 +153,8 @@ class LocalAiServiceTest {
                 proxy(MailboxMessageRepository.class, invocation -> defaultValue(invocation.getMethod().getReturnType())),
                 proxy(ContactConversationSummaryRepository.class, invocation -> defaultValue(invocation.getMethod().getReturnType())),
                 sessionRepository,
-                messageRepository
+                messageRepository,
+                null
         );
 
         AiChatMessage answer = service.askProject(project.getId(), "What changed?");
@@ -184,7 +187,8 @@ class LocalAiServiceTest {
                 proxy(MailboxMessageRepository.class, invocation -> defaultValue(invocation.getMethod().getReturnType())),
                 proxy(ContactConversationSummaryRepository.class, invocation -> defaultValue(invocation.getMethod().getReturnType())),
                 sessionRepository(),
-                messageRepository()
+                messageRepository(),
+                null
         );
 
         service.askProject(project.getId(), "Question?");
@@ -246,7 +250,8 @@ class LocalAiServiceTest {
                 proxy(MailboxMessageRepository.class, invocation -> defaultValue(invocation.getMethod().getReturnType())),
                 proxy(ContactConversationSummaryRepository.class, invocation -> defaultValue(invocation.getMethod().getReturnType())),
                 sessionRepository,
-                messageRepository
+                messageRepository,
+                null
         );
 
         AiChatSession session = service.newProjectChat(project.getId());

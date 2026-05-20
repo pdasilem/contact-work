@@ -114,7 +114,8 @@ class InboxSyncServiceTest {
                 mailboxMessageRepository,
                 projectService,
                 appProperties,
-                new GmailImapService(appProperties)
+                new GmailImapService(appProperties),
+                null
         );
     }
 

@@ -9,4 +9,5 @@ public interface MailboxMessageRepository extends JpaRepository<MailboxMessage, 
     boolean existsByProjectIdAndContentHashAndNormalizedMessageIdIsNull(UUID projectId, String contentHash);
     List<MailboxMessage> findByProjectIdAndContactIdOrderByServiceDateAsc(UUID projectId, UUID contactId);
     List<MailboxMessage> findTop20ByProjectIdOrderByServiceDateDesc(UUID projectId);
+    List<MailboxMessage> findByProjectIdOrderByServiceDateAsc(UUID projectId);
 }

@@ -31,19 +31,22 @@ public class ContactWorkAiTools {
     private final AppProperties appProperties;
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
+    private final MessageVectorIndexer messageVectorIndexer;
 
     public ContactWorkAiTools(
             ContactRepository contactRepository,
             MailboxMessageRepository mailboxMessageRepository,
             AppProperties appProperties,
             HttpClient httpClient,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            MessageVectorIndexer messageVectorIndexer
     ) {
         this.contactRepository = contactRepository;
         this.mailboxMessageRepository = mailboxMessageRepository;
         this.appProperties = appProperties;
         this.httpClient = httpClient;
         this.objectMapper = objectMapper;
+        this.messageVectorIndexer = messageVectorIndexer;
     }
 
     @Tool(description = "Return sent, replied, bounced, failed, and new contact counts for a project.")
@@ -87,6 +90,12 @@ public class ContactWorkAiTools {
                 .map(this::formatMessage)
                 .reduce((left, right) -> left + "\n\n" + right)
                 .orElse("No mailbox messages.");
+    }
+
+    @Tool(description = "Re-index all project messages into vector store for AI search. Use when messages are missing from AI context.")
+    public String reindexProjectMessages(String projectId) {
+        int count = messageVectorIndexer.indexProject(UUID.fromString(projectId));
+        return "Indexed " + count + " messages for project " + projectId;
     }
 
     @Tool(description = "Search the public web with Brave for external/current facts only. Never include private project, contact, mailbox, credential, UUID, email address, message body, or ContactWork database text in the query.")

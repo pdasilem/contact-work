@@ -70,7 +70,8 @@ class ContactWorkAiToolsTest {
                 null,
                 properties,
                 httpClient,
-                new ObjectMapper()
+                new ObjectMapper(),
+                null
         );
     }
 
