@@ -5,10 +5,10 @@ spring:
   application:
     name: ContactWork
   ai:
+    model:
+      embedding: google-genai
     ollama:
       base-url: http://localhost:11434
-      embedding:
-        enabled: false
       chat:
         options:
           model: ${LOCAL_AI_MODEL:gemma4:e2b}
