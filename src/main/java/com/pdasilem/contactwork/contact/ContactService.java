@@ -122,7 +122,14 @@ public class ContactService {
     }
 
     @Transactional
-    public Contact updateEditableFields(UUID projectId, UUID contactId, String contactName, String email, String note) {
+    public Contact updateEditableFields(
+            UUID projectId,
+            UUID contactId,
+            String contactName,
+            String email,
+            ContactStatus status,
+            String note
+    ) {
         Contact contact = getContact(projectId, contactId);
         String normalizedEmail = requiredEmail(email);
         contactRepository.findByProjectIdAndEmail(projectId, normalizedEmail)
@@ -132,6 +139,9 @@ public class ContactService {
                 });
         contact.setContactName(blankToEmpty(contactName));
         contact.setEmail(normalizedEmail);
+        if (status != null) {
+            contact.setStatus(status);
+        }
         contact.setNote(trimToNull(note));
         return contactRepository.save(contact);
     }

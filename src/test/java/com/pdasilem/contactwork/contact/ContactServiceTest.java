@@ -75,7 +75,7 @@ class ContactServiceTest {
     }
 
     @Test
-    void shouldUpdateOnlyEditableFields() {
+    void shouldUpdateEditableFieldsAndStatus() {
         Project project = project();
         Contact contact = new Contact();
         contact.setId(UUID.randomUUID());
@@ -91,11 +91,19 @@ class ContactServiceTest {
         when(contactRepository.findByProjectIdAndEmail(project.getId(), "new@example.com")).thenReturn(Optional.empty());
         when(contactRepository.save(any(Contact.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Contact updated = service.updateEditableFields(project.getId(), contact.getId(), "New Name", "new@example.com", "New note");
+        Contact updated = service.updateEditableFields(
+                project.getId(),
+                contact.getId(),
+                "New Name",
+                "new@example.com",
+                ContactStatus.SEND_FAILED,
+                "New note"
+        );
 
         assertThat(updated.getOrganizationName()).isEqualTo("Original Org");
         assertThat(updated.getContactName()).isEqualTo("New Name");
         assertThat(updated.getEmail()).isEqualTo("new@example.com");
+        assertThat(updated.getStatus()).isEqualTo(ContactStatus.SEND_FAILED);
         assertThat(updated.getNote()).isEqualTo("New note");
     }
 

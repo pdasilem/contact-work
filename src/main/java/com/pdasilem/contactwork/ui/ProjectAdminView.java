@@ -1964,17 +1964,21 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
         TextField organization = new TextField("Organization");
         TextField contactName = new TextField("Contact name");
         EmailField email = new EmailField("Email");
+        Select<ContactStatus> status = new Select<>();
         TextArea manualNote = new TextArea("Note");
 
         organization.setValue(value(contact.getOrganizationName()));
         organization.setReadOnly(true);
         contactName.setValue(value(contact.getContactName()));
         email.setValue(value(contact.getEmail()));
+        status.setLabel("Status");
+        status.setItems(ContactStatus.values());
+        status.setValue(contact.getStatus());
         manualNote.setValue(value(contact.getNote()));
 
         Div form = new Div();
         form.addClassName("cw-dialog-form");
-        form.add(organization, contactName, email, manualNote);
+        form.add(organization, contactName, email, status, manualNote);
         addReadOnlyCustomFields(form, contact);
 
         Button cancel = new Button("Cancel", event -> dialog.close());
@@ -1985,6 +1989,7 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
                         contact.getId(),
                         contactName.getValue(),
                         required(email, "Email"),
+                        status.getValue(),
                         manualNote.getValue()
                 );
                 refreshContacts();
