@@ -1,6 +1,7 @@
 services:
   postgres:
     image: pgvector/pgvector:pg17
+    restart: unless-stopped
     environment:
       POSTGRES_DB: contactwork
       POSTGRES_USER: ${SPRING_DATASOURCE_USERNAME:-contactwork}
@@ -19,6 +20,7 @@ services:
     build:
       context: deploy/onlyoffice
       dockerfile: Dockerfile
+    restart: unless-stopped
     environment:
       JWT_ENABLED: "false"
       ALLOW_PRIVATE_IP_ADDRESS: "true"
@@ -35,6 +37,7 @@ services:
 
   ollama:
     image: ollama/ollama:latest
+    restart: unless-stopped
     ports:
       - "127.0.0.1:11434:11434"
     volumes:
@@ -60,6 +63,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    restart: unless-stopped
     env_file:
       - .env
     environment:
