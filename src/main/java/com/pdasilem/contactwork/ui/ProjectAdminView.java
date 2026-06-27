@@ -28,6 +28,7 @@ import com.pdasilem.contactwork.inbox.InboxSyncService;
 import com.pdasilem.contactwork.mail.GmailAuthorizationRequiredException;
 import com.pdasilem.contactwork.mail.GmailAliasService;
 import com.pdasilem.contactwork.mail.MailHealthService;
+import com.pdasilem.contactwork.mail.ContactFreeformMailService;
 import com.pdasilem.contactwork.mail.SendCoordinator;
 import com.pdasilem.contactwork.project.MailTransportType;
 import com.pdasilem.contactwork.project.AiProvider;
@@ -118,6 +119,7 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
     private final MailHealthService mailHealthService;
     private final GmailAliasService gmailAliasService;
     private final InboxSyncService inboxSyncService;
+    private final ContactFreeformMailService contactFreeformMailService;
     private final ProjectAssetService projectAssetService;
     private final ProjectContactColumnService projectContactColumnService;
     private final MailboxMessageRepository mailboxMessageRepository;
@@ -168,6 +170,7 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
             MailHealthService mailHealthService,
             GmailAliasService gmailAliasService,
             InboxSyncService inboxSyncService,
+            ContactFreeformMailService contactFreeformMailService,
             ProjectAssetService projectAssetService,
             ProjectContactColumnService projectContactColumnService,
             MailboxMessageRepository mailboxMessageRepository,
@@ -185,6 +188,7 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
         this.mailHealthService = mailHealthService;
         this.gmailAliasService = gmailAliasService;
         this.inboxSyncService = inboxSyncService;
+        this.contactFreeformMailService = contactFreeformMailService;
         this.projectAssetService = projectAssetService;
         this.projectContactColumnService = projectContactColumnService;
         this.mailboxMessageRepository = mailboxMessageRepository;
@@ -1720,7 +1724,13 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
         Div messages = new Div();
         messages.addClassName("cw-conversation-list");
         persistResizableHeight(messages, STORAGE_CONVERSATION_HEIGHT);
-        renderConversationMessages(messages, contact);
+
+        Select<AiChatSession> chatSessions = new Select<>();
+        chatSessions.setLabel("Chat");
+        chatSessions.setItemLabelGenerator(this::chatSessionLabel);
+        loadContactChatSessions(chatSessions, contact);
+        Supplier<String> aiDraft = () -> latestAssistantDraft(contact, chatSessions.getValue());
+        renderConversationMessages(messages, contact, aiDraft);
 
         Div summary = new Div();
         summary.addClassName("cw-summary-box");
@@ -1737,7 +1747,7 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
             try {
                 inboxSyncService.syncInbox(selectedProject.getId(), contact.getId());
                 Contact refreshed = contactService.getContact(selectedProject.getId(), contact.getId());
-                renderConversationMessages(messages, refreshed);
+                renderConversationMessages(messages, refreshed, aiDraft);
                 renderSummary(summary, refreshed);
                 refreshContacts();
                 int after = mailboxMessageRepository.findByProjectIdAndContactIdOrderByServiceDateAsc(
@@ -1766,14 +1776,14 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
                 aiStatus.setText("");
             }
         });
+        Button newMessage = new Button("New message", VaadinIcon.ENVELOPE.create(),
+                event -> openContactMessageDialog(contact, null, "", messages, aiDraft));
+        Button newFromAi = new Button("New from AI draft", VaadinIcon.MAGIC.create(),
+                event -> openContactMessageDialog(contact, null, aiDraft.get(), messages, aiDraft));
 
         Div chatHistory = new Div();
         chatHistory.addClassName("cw-chat-history");
         persistResizableHeight(chatHistory, STORAGE_CONTACT_CHAT_HEIGHT);
-        Select<AiChatSession> chatSessions = new Select<>();
-        chatSessions.setLabel("Chat");
-        chatSessions.setItemLabelGenerator(this::chatSessionLabel);
-        loadContactChatSessions(chatSessions, contact);
         renderContactChat(chatHistory, contact, chatSessions.getValue());
         TextArea question = new TextArea("Ask about this contact");
         question.setWidthFull();
@@ -1836,7 +1846,9 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
 
         HorizontalLayout chatControls = new HorizontalLayout(chatSessions, newChat, rename, compact, archive, deleteChat);
         chatControls.setAlignItems(Alignment.BASELINE);
-        Div content = new Div(header, syncContactInbox, syncStatus, messages, summary, summarize, aiStatus,
+        HorizontalLayout messageControls = new HorizontalLayout(syncContactInbox, newMessage, newFromAi, syncStatus);
+        messageControls.setAlignItems(Alignment.CENTER);
+        Div content = new Div(header, messageControls, messages, summary, summarize, aiStatus,
                 chatControls, chatHistory, question, send);
         content.addClassName("cw-conversation-panel");
         dialog.add(content);
@@ -1845,6 +1857,10 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
     }
 
     private void renderConversationMessages(Div target, Contact contact) {
+        renderConversationMessages(target, contact, () -> "");
+    }
+
+    private void renderConversationMessages(Div target, Contact contact, Supplier<String> aiDraft) {
         target.removeAll();
         List<MailboxMessage> messages = mailboxMessageRepository.findByProjectIdAndContactIdOrderByServiceDateAsc(
                 selectedProject.getId(), contact.getId());
@@ -1857,12 +1873,88 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
         for (MailboxMessage message : messages) {
             Div item = new Div();
             item.addClassName("cw-conversation-message");
+            Button reply = new Button("Reply", VaadinIcon.REPLY.create(),
+                    event -> openContactMessageDialog(contact, message, "", target, aiDraft));
+            Button replyFromAi = new Button("Reply with AI draft", VaadinIcon.MAGIC.create(),
+                    event -> openContactMessageDialog(contact, message, aiDraft.get(), target, aiDraft));
             item.add(new Span(value(message.getServiceDate())),
                     pill(message.getDirection().name(), message.getDirection().name().equals("SENT") ? "success" : "warning"),
                     new Span(value(message.getSubject())),
-                    new Span(value(message.getBodyText())));
+                    new Span(value(message.getBodyText())),
+                    new HorizontalLayout(reply, replyFromAi));
             target.add(item);
         }
+    }
+
+    private void openContactMessageDialog(
+            Contact contact,
+            MailboxMessage parent,
+            String draftBody,
+            Div messages,
+            Supplier<String> aiDraft
+    ) {
+        Dialog dialog = new Dialog();
+        dialog.setHeaderTitle(parent == null ? "New message" : "Reply");
+        dialog.setWidth("680px");
+
+        TextField to = new TextField("To");
+        to.setValue(value(contact.getEmail()));
+        to.setReadOnly(true);
+        TextField subject = new TextField("Subject");
+        subject.setWidthFull();
+        subject.setValue(parent == null ? "" : replySubject(parent.getSubject()));
+        TextArea body = new TextArea("Body");
+        body.setWidthFull();
+        body.setMinHeight("260px");
+        body.setValue(value(draftBody));
+        Span error = new Span();
+        error.addClassName("cw-error");
+
+        Div form = new Div(to, subject, body, error);
+        form.addClassName("cw-dialog-form");
+
+        Button cancel = new Button("Cancel", event -> dialog.close());
+        Button send = new Button("Send", VaadinIcon.PAPERPLANE.create());
+        send.addClickListener(event -> {
+            send.setEnabled(false);
+            try {
+                if (parent == null) {
+                    contactFreeformMailService.sendNew(selectedProject.getId(), contact.getId(), subject.getValue(), body.getValue());
+                } else {
+                    contactFreeformMailService.sendReply(selectedProject.getId(), contact.getId(), parent.getId(), subject.getValue(), body.getValue());
+                }
+                renderConversationMessages(messages, contact, aiDraft);
+                refreshContacts();
+                dialog.close();
+                Notification.show("Message sent", 2500, Position.BOTTOM_START);
+            } catch (Exception ex) {
+                error.setText(rootCauseMessage("Message send failed", ex));
+                send.setEnabled(true);
+            }
+        });
+        send.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        dialog.add(form);
+        dialog.getFooter().add(cancel, send);
+        dialog.open();
+    }
+
+    private String replySubject(String subject) {
+        String value = value(subject);
+        return value.regionMatches(true, 0, "Re:", 0, 3) ? value : "Re: " + value;
+    }
+
+    private String latestAssistantDraft(Contact contact, AiChatSession session) {
+        if (session == null) {
+            return "";
+        }
+        List<AiChatMessage> messages = localAiService.contactMessages(selectedProject.getId(), contact.getId(), session.getId());
+        for (int index = messages.size() - 1; index >= 0; index--) {
+            AiChatMessage message = messages.get(index);
+            if (message.getRole() == AiChatRole.ASSISTANT) {
+                return value(message.getContent());
+            }
+        }
+        return "";
     }
 
     private void renderSummary(Div target, Contact contact) {

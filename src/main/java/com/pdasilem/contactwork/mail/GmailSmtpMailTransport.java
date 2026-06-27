@@ -33,6 +33,7 @@ public class GmailSmtpMailTransport implements MailTransport {
                 DataSource dataSource = new ByteArrayDataSource(attachment.content(), "application/octet-stream");
                 helper.addAttachment(attachment.filename(), dataSource);
             }
+            applyThreadHeaders(mimeMessage, envelope);
             mimeMessage.saveChanges();
             String messageId = mimeMessage.getMessageID();
             sender.send(mimeMessage);
@@ -60,6 +61,15 @@ public class GmailSmtpMailTransport implements MailTransport {
             helper.setFrom(new InternetAddress(envelope.fromEmail(), envelope.fromName(), "UTF-8"));
         } else {
             helper.setFrom(envelope.fromEmail());
+        }
+    }
+
+    static void applyThreadHeaders(MimeMessage message, MailEnvelope envelope) throws MessagingException {
+        if (envelope.inReplyToMessageId() != null && !envelope.inReplyToMessageId().isBlank()) {
+            message.setHeader("In-Reply-To", envelope.inReplyToMessageId());
+        }
+        if (!envelope.referencesMessageIds().isEmpty()) {
+            message.setHeader("References", String.join(" ", envelope.referencesMessageIds()));
         }
     }
 }

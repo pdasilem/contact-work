@@ -85,6 +85,7 @@ public class GmailImapService {
             helper.addAttachment(attachment.filename(), dataSource);
         }
 
+        GmailSmtpMailTransport.applyThreadHeaders(message, envelope);
         message.saveChanges();
         if (messageId != null && !messageId.isBlank()) {
             message.setHeader("Message-ID", messageId);

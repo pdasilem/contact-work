@@ -169,7 +169,9 @@ public class LocalAiService {
         AiChatSession session = sessionRepository.findFirstByScopeAndContactIdAndArchivedAtIsNullOrderByUpdatedAtDesc(AiChatScope.CONTACT, contactId)
                 .orElseGet(() -> newContactSession(contact));
         String context = "projectId=" + projectId + "\ncontactId=" + contactId
-                + "\n\n--- Contact messages ---\n"
+                + "\n\n--- Contact chronological mailbox conversation ---\n"
+                + contactConversation(projectId, contactId)
+                + "\n\n--- Relevant contact message search ---\n"
                 + retrieveRelevantMessages(projectId, contactId, question);
         return ask(session, projectService.aiSystemPrompt(project) + "\n\n"
                         + "Contact AI scope: answer about one contact only. Use only this contact conversation. Never mutate statuses.",
@@ -182,7 +184,9 @@ public class LocalAiService {
         Contact contact = contactService.getContact(projectId, contactId);
         AiChatSession session = sessionId == null ? newContactSession(contact) : contactSession(projectId, contactId, sessionId);
         String context = "projectId=" + projectId + "\ncontactId=" + contactId
-                + "\n\n--- Contact messages ---\n"
+                + "\n\n--- Contact chronological mailbox conversation ---\n"
+                + contactConversation(projectId, contactId)
+                + "\n\n--- Relevant contact message search ---\n"
                 + retrieveRelevantMessages(projectId, contactId, question);
         return ask(session, projectService.aiSystemPrompt(project) + "\n\n"
                         + "Contact AI scope: answer about one contact only. Use only this contact conversation. Never mutate statuses.",

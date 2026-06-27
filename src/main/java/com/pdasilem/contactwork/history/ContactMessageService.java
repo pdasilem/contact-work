@@ -36,6 +36,22 @@ public class ContactMessageService {
                 senderEmail, recipientEmail, subject, bodyText, messageTimestamp);
     }
 
+    @Transactional
+    public ContactMessage recordOutbound(
+            Project project,
+            Contact contact,
+            String messageId,
+            String relatedMessageId,
+            String subject,
+            String bodyText,
+            String senderEmail,
+            String recipientEmail,
+            OffsetDateTime messageTimestamp
+    ) {
+        return save(project, contact, MessageDirection.OUTBOUND, MessageEventType.EMAIL, messageId, relatedMessageId,
+                senderEmail, recipientEmail, subject, bodyText, messageTimestamp);
+    }
+
     private ContactMessage save(
             Project project,
             Contact contact,

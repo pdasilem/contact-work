@@ -42,6 +42,10 @@ public class BrevoApiMailTransport implements MailTransport {
         body.put("to", to);
         body.put("subject", envelope.subject());
         body.put("textContent", envelope.body());
+        Map<String, String> headers = threadHeaders(envelope);
+        if (!headers.isEmpty()) {
+            body.put("headers", headers);
+        }
         if (!attachments.isEmpty()) {
             body.put("attachment", attachments);
         }
@@ -81,6 +85,17 @@ public class BrevoApiMailTransport implements MailTransport {
             return Map.of("email", envelope.fromEmail(), "name", envelope.fromName());
         }
         return Map.of("email", envelope.fromEmail());
+    }
+
+    private Map<String, String> threadHeaders(MailEnvelope envelope) {
+        Map<String, String> headers = new java.util.LinkedHashMap<>();
+        if (envelope.inReplyToMessageId() != null && !envelope.inReplyToMessageId().isBlank()) {
+            headers.put("In-Reply-To", envelope.inReplyToMessageId());
+        }
+        if (!envelope.referencesMessageIds().isEmpty()) {
+            headers.put("References", String.join(" ", envelope.referencesMessageIds()));
+        }
+        return headers;
     }
 
     private String requireApiKey() {
