@@ -110,6 +110,7 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
     private static final String STORAGE_PROJECT_CHAT_HEIGHT = "contactwork.projectChatHeight";
     private static final String STORAGE_CONTACT_CHAT_HEIGHT = "contactwork.contactChatHeight";
     private static final String STORAGE_CONVERSATION_HEIGHT = "contactwork.conversationHeight";
+    private static final String STORAGE_CONVERSATION_SUMMARY_HEIGHT = "contactwork.conversationSummaryHeight";
     private static final String STORAGE_CONTACTS_GRID_HEIGHT_PREFIX = "contactwork.contactsGridHeight.";
 
     private final ProjectService projectService;
@@ -1734,6 +1735,7 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
 
         Div summary = new Div();
         summary.addClassName("cw-summary-box");
+        persistResizableHeight(summary, STORAGE_CONVERSATION_SUMMARY_HEIGHT);
         renderSummary(summary, contact);
 
         Span aiStatus = new Span();
