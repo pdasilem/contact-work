@@ -13,5 +13,6 @@ public interface ContactRepository extends JpaRepository<Contact, UUID>, JpaSpec
     Optional<Contact> findByProjectIdAndOutboundMessageId(UUID projectId, String outboundMessageId);
     List<Contact> findByProjectIdAndDeletedAtIsNull(UUID projectId);
     List<Contact> findByProjectIdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(UUID projectId, ContactStatus status);
+    List<Contact> findByProjectIdAndStatusInAndDeletedAtIsNullOrderByCreatedAtAsc(UUID projectId, List<ContactStatus> statuses);
     long countByProjectIdAndStatusAndDeletedAtIsNull(UUID projectId, ContactStatus status);
 }

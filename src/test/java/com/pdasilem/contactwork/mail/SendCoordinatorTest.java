@@ -59,7 +59,7 @@ class SendCoordinatorTest {
         SendCoordinator coordinator = coordinator();
         stubBatchSendReady(project);
         stubNoInProgress(project);
-        when(contactRepository.findByProjectIdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(project.getId(), ContactStatus.NEW))
+        when(contactRepository.findByProjectIdAndStatusInAndDeletedAtIsNullOrderByCreatedAtAsc(project.getId(), List.of(ContactStatus.NEW)))
                 .thenReturn(List.of(first, second));
         when(contactRepository.findByProjectIdAndId(project.getId(), first.getId())).thenReturn(Optional.of(first));
         when(contactRepository.findByProjectIdAndId(project.getId(), second.getId())).thenReturn(Optional.of(second));
@@ -80,7 +80,7 @@ class SendCoordinatorTest {
         SendCoordinator coordinator = coordinator();
         stubBatchSendReady(project);
         stubNoInProgress(project);
-        when(contactRepository.findByProjectIdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(project.getId(), ContactStatus.NEW))
+        when(contactRepository.findByProjectIdAndStatusInAndDeletedAtIsNullOrderByCreatedAtAsc(project.getId(), List.of(ContactStatus.NEW)))
                 .thenReturn(List.of(first, second, third));
         when(contactRepository.findByProjectIdAndId(project.getId(), first.getId())).thenReturn(Optional.of(first));
         when(contactRepository.findByProjectIdAndId(project.getId(), second.getId())).thenReturn(Optional.of(second));
@@ -92,6 +92,28 @@ class SendCoordinatorTest {
         assertThat(first.getStatus()).isEqualTo(ContactStatus.SENT);
         assertThat(second.getStatus()).isEqualTo(ContactStatus.SENT);
         assertThat(third.getStatus()).isEqualTo(ContactStatus.NEW);
+    }
+
+    @Test
+    void batchWithSelectedStatusesSendsMatchingContacts() {
+        Project project = activeProject(null);
+        Contact first = contactWithoutReadableProject(ContactStatus.NEW);
+        Contact second = contactWithoutReadableProject(ContactStatus.REPLIED);
+        SendCoordinator coordinator = coordinator();
+        stubBatchSendReady(project);
+        stubNoInProgress(project);
+        when(contactRepository.findByProjectIdAndStatusInAndDeletedAtIsNullOrderByCreatedAtAsc(
+                project.getId(),
+                List.of(ContactStatus.NEW, ContactStatus.REPLIED)
+        )).thenReturn(List.of(first, second));
+        when(contactRepository.findByProjectIdAndId(project.getId(), first.getId())).thenReturn(Optional.of(first));
+        when(contactRepository.findByProjectIdAndId(project.getId(), second.getId())).thenReturn(Optional.of(second));
+
+        coordinator.start(project.getId(), List.of(ContactStatus.NEW, ContactStatus.REPLIED));
+
+        verify(outboundMailService, times(2)).send(any(), any(), any(), any());
+        assertThat(first.getStatus()).isEqualTo(ContactStatus.SENT);
+        assertThat(second.getStatus()).isEqualTo(ContactStatus.SENT);
     }
 
     @Test

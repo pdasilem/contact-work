@@ -1473,12 +1473,22 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
         mode.setItemLabelGenerator(SendMode::label);
         mode.setValue(selectedContacts.isEmpty() ? SendMode.BATCH : SendMode.SELECTED_CONTACT);
 
+        MultiSelectComboBox<ContactStatus> batchStatuses = new MultiSelectComboBox<>("Batch statuses");
+        batchStatuses.setItems(batchSelectableStatuses());
+        batchStatuses.setItemLabelGenerator(ContactStatus::name);
+        batchStatuses.setValue(Set.of(ContactStatus.NEW));
+        batchStatuses.setWidthFull();
+
         Span error = new Span();
         error.addClassName("cw-error");
 
+        Div batchRules = new Div();
+        batchRules.addClassName("cw-send-summary");
+        renderBatchRuleSummary(batchRules, status, batchStatuses.getValue());
+
         Div body = new Div();
         body.addClassName("cw-dialog-form");
-        body.add(mode, sendReadinessSummary(blockers), sendCounterSummary(status), batchRuleSummary(status),
+        body.add(mode, batchStatuses, sendReadinessSummary(blockers), sendCounterSummary(status), batchRules,
                 selectedContactsSummary(selectedContacts), attachmentSummary(), error);
 
         Button cancel = new Button("Cancel", event -> dialog.close());
@@ -1493,7 +1503,9 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
             }
         });
         Button startBatch = new Button("Start batch", event -> {
-            if (executeStartBatch(status.eligibleBatchCount(), error)) {
+            Set<ContactStatus> selectedStatuses = batchStatuses.getValue();
+            long eligibleBatchCount = selectedBatchCount(status, selectedStatuses);
+            if (executeStartBatch(selectedStatuses, eligibleBatchCount, error)) {
                 dialog.close();
             }
         });
@@ -1506,13 +1518,23 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
             sendContact.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         }
         sendContact.setEnabled(!selectedContacts.isEmpty() && blockers.isEmpty());
-        startBatch.setEnabled(blockers.isEmpty() && !status.running() && status.eligibleBatchCount() > 0);
+        Runnable updateBatchControls = () -> {
+            renderBatchRuleSummary(batchRules, status, batchStatuses.getValue());
+            startBatch.setEnabled(blockers.isEmpty()
+                    && !status.running()
+                    && !batchStatuses.getValue().isEmpty()
+                    && selectedBatchCount(status, batchStatuses.getValue()) > 0);
+        };
+        updateBatchControls.run();
+        batchStatuses.addValueChangeListener(event -> updateBatchControls.run());
         mode.addValueChangeListener(event -> {
             boolean selectedMode = event.getValue() == SendMode.SELECTED_CONTACT;
             sendContact.setVisible(selectedMode);
+            batchStatuses.setVisible(!selectedMode);
             startBatch.setVisible(!selectedMode);
         });
         sendContact.setVisible(mode.getValue() == SendMode.SELECTED_CONTACT);
+        batchStatuses.setVisible(mode.getValue() == SendMode.BATCH);
         startBatch.setVisible(mode.getValue() == SendMode.BATCH);
 
         dialog.add(body);
@@ -1543,9 +1565,13 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
         }
     }
 
-    private boolean executeStartBatch(long eligibleBatchCount, Span error) {
+    private boolean executeStartBatch(Set<ContactStatus> statuses, long eligibleBatchCount, Span error) {
         try {
-            sendCoordinator.start(selectedProject.getId());
+            if (statuses == null || statuses.isEmpty()) {
+                error.setText("Select at least one batch status.");
+                return false;
+            }
+            sendCoordinator.start(selectedProject.getId(), batchStatuses(statuses));
             refreshContacts();
             updateReadinessState();
             Notification.show("Batch started: " + eligibleBatchCount + " eligible contacts", 2500, Position.BOTTOM_START);
@@ -1575,7 +1601,7 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
         Div summary = new Div();
         summary.addClassName("cw-send-summary");
         summary.add(new Span("New: " + status.newCount()));
-        summary.add(new Span("Eligible batch: " + status.eligibleBatchCount()));
+        summary.add(new Span("Default NEW batch: " + status.eligibleBatchCount()));
         summary.add(new Span("Sent: " + status.sentCount()));
         summary.add(new Span("Failed: " + status.sendFailedCount()));
         summary.add(new Span("Replied: " + status.repliedCount()));
@@ -1583,14 +1609,50 @@ public class ProjectAdminView extends Composite<Div> implements BeforeEnterObser
         return summary;
     }
 
-    private Div batchRuleSummary(SendStatusResponse status) {
-        Div summary = new Div();
-        summary.addClassName("cw-send-summary");
+    private void renderBatchRuleSummary(Div summary, SendStatusResponse status, Set<ContactStatus> statuses) {
+        summary.removeAll();
         summary.add(new Span(status.running() ? "Batch is running." : "Batch is idle."));
-        summary.add(new Span("Batch sends only NEW contacts."));
+        List<ContactStatus> selectedStatuses = batchStatuses(statuses);
+        String statusLabel = selectedStatuses.isEmpty()
+                ? "none"
+                : selectedStatuses.stream().map(ContactStatus::name).collect(java.util.stream.Collectors.joining(", "));
+        summary.add(new Span("Batch statuses: " + statusLabel));
+        summary.add(new Span("Eligible selected: " + selectedBatchCount(status, statuses)));
         summary.add(new Span("Max batch cap: " + selectedProject.getMaxMessagesPerBatch()));
         summary.add(new Span("Send delay: " + selectedProject.getSendDelayMs() + " ms"));
-        return summary;
+    }
+
+    private List<ContactStatus> batchSelectableStatuses() {
+        return List.of(ContactStatus.NEW, ContactStatus.SEND_FAILED, ContactStatus.SENT,
+                ContactStatus.REPLIED, ContactStatus.BOUNCED);
+    }
+
+    private List<ContactStatus> batchStatuses(Set<ContactStatus> statuses) {
+        if (statuses == null || statuses.isEmpty()) {
+            return List.of();
+        }
+        return batchSelectableStatuses().stream()
+                .filter(statuses::contains)
+                .toList();
+    }
+
+    private long selectedBatchCount(SendStatusResponse status, Set<ContactStatus> statuses) {
+        long count = batchStatuses(statuses).stream()
+                .mapToLong(batchStatus -> batchStatusCount(status, batchStatus))
+                .sum();
+        Integer maxMessagesPerBatch = selectedProject.getMaxMessagesPerBatch();
+        return maxMessagesPerBatch == null ? count : Math.min(count, maxMessagesPerBatch);
+    }
+
+    private long batchStatusCount(SendStatusResponse status, ContactStatus batchStatus) {
+        return switch (batchStatus) {
+            case NEW -> status.newCount();
+            case SEND_FAILED -> status.sendFailedCount();
+            case SENT -> status.sentCount();
+            case REPLIED -> status.repliedCount();
+            case BOUNCED -> status.bouncedCount();
+            case IN_PROGRESS, INVALID_EMAIL -> 0;
+        };
     }
 
     private Div selectedContactsSummary(List<Contact> contacts) {

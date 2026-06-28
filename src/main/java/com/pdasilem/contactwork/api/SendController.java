@@ -1,13 +1,16 @@
 package com.pdasilem.contactwork.api;
 
 import com.pdasilem.contactwork.mail.SendCoordinator;
+import com.pdasilem.contactwork.contact.ContactStatus;
 import com.pdasilem.contactwork.contact.ContactLookupService;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -23,8 +26,11 @@ public class SendController {
     }
 
     @PostMapping("/projects/{projectId}/send/start")
-    public ResponseEntity<Void> startProjectSend(@PathVariable UUID projectId) {
-        sendCoordinator.start(projectId);
+    public ResponseEntity<Void> startProjectSend(
+            @PathVariable UUID projectId,
+            @RequestParam(required = false) List<ContactStatus> status
+    ) {
+        sendCoordinator.start(projectId, status);
         return ResponseEntity.accepted().build();
     }
 

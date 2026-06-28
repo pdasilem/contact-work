@@ -43,12 +43,17 @@ public class SendCoordinator {
     }
 
     public void start(UUID projectId) {
+        start(projectId, List.of(ContactStatus.NEW));
+    }
+
+    public void start(UUID projectId, List<ContactStatus> statuses) {
         requireActiveProject(projectId);
+        List<ContactStatus> batchStatuses = batchStatuses(statuses);
         contactSendProcessor.recoverStuckInProgress(projectId);
         if (!running.compareAndSet(false, true)) {
             throw new IllegalStateException("Send process is already running");
         }
-        taskExecutor.execute(() -> runSendLoop(projectId));
+        taskExecutor.execute(() -> runSendLoop(projectId, batchStatuses));
     }
 
     public SendStatusResponse getStatus(UUID projectId) {
@@ -58,7 +63,7 @@ public class SendCoordinator {
         long eligibleBatchCount = cappedCount(newCount, project.getMaxMessagesPerBatch());
         return new SendStatusResponse(
                 running.get(),
-                "BATCH endpoint processes NEW contacts only; single-contact endpoint can also retry SEND_FAILED contacts",
+                "BATCH endpoint processes selected contact statuses; default is NEW",
                 newCount,
                 eligibleBatchCount,
                 contactRepository.countByProjectIdAndStatusAndDeletedAtIsNull(projectId, ContactStatus.SENT),
@@ -68,10 +73,10 @@ public class SendCoordinator {
         );
     }
 
-    private void runSendLoop(UUID projectId) {
+    private void runSendLoop(UUID projectId, List<ContactStatus> statuses) {
         try {
             Project project = projectService.getProjectForSystem(projectId);
-            List<Contact> contacts = contactRepository.findByProjectIdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(projectId, ContactStatus.NEW);
+            List<Contact> contacts = contactRepository.findByProjectIdAndStatusInAndDeletedAtIsNullOrderByCreatedAtAsc(projectId, statuses);
             Integer maxMessagesPerBatch = project.getMaxMessagesPerBatch();
             if (maxMessagesPerBatch != null) {
                 contacts = contacts.stream()
@@ -79,12 +84,33 @@ public class SendCoordinator {
                         .toList();
             }
             for (Contact contact : contacts) {
-                contactSendProcessor.processContactForSystem(projectId, contact.getId(), false);
+                contactSendProcessor.processContactForSystem(projectId, contact.getId(), forceForBatch(contact.getStatus()));
                 sleepDelay(project);
             }
         } finally {
             running.set(false);
         }
+    }
+
+    private List<ContactStatus> batchStatuses(List<ContactStatus> statuses) {
+        if (statuses == null || statuses.isEmpty()) {
+            return List.of(ContactStatus.NEW);
+        }
+        List<ContactStatus> batchStatuses = statuses.stream()
+                .filter(status -> status != null)
+                .distinct()
+                .toList();
+        if (batchStatuses.isEmpty()) {
+            return List.of(ContactStatus.NEW);
+        }
+        if (batchStatuses.contains(ContactStatus.IN_PROGRESS) || batchStatuses.contains(ContactStatus.INVALID_EMAIL)) {
+            throw new IllegalArgumentException("IN_PROGRESS and INVALID_EMAIL contacts cannot be selected for batch sending");
+        }
+        return batchStatuses;
+    }
+
+    private boolean forceForBatch(ContactStatus status) {
+        return status != ContactStatus.NEW && status != ContactStatus.SEND_FAILED;
     }
 
     private void sleepDelay(Project project) {
